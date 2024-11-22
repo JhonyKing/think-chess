@@ -1,25 +1,25 @@
-import styled from "styled-components";
+//import styled from "styled-components";
 import GlobalStyles from "./styles/GlobalStyles";
-import Button from "./ui/Button";
-import Input from "./ui/Input";
-import Heading from "./ui/Heading";
+import { BrowserRouter, Route, Routes } from "react-router";
+import Dashboard from "./pages/Dashboard";
+// import Button from "./ui/Button";
+// import Input from "./ui/Input";
+// import Heading from "./ui/Heading";
+// import Row from "./ui/Row";
 
-const StyledApp = styled.main`
-  background-color: orangered;
-  padding: 20px;
-`;
+// const StyledApp = styled.main`
+//   padding: 20px;
+// `;
 
 export default function App() {
   return (
     <>
       <GlobalStyles />
-      <StyledApp>
-        <Heading as="h1">Think chess</Heading>
-        <Heading as="h2">The best in the world!</Heading>
-        <div>Hello World!</div>
-        <Button>Hey</Button>
-        <Input />
-      </StyledApp>
+      <BrowserRouter>
+        <Routes>
+          <Route path="dashboard" element={<Dashboard />} />
+        </Routes>
+      </BrowserRouter>
     </>
   );
 }

@@ -1,4 +1,19 @@
+import { NavLink } from "react-router";
 import styled from "styled-components";
+import {
+  HiOutlineAcademicCap,
+  HiOutlineBanknotes,
+  HiOutlineBuildingLibrary,
+  HiOutlineCalendarDays,
+  HiOutlineChartBar,
+  HiOutlineCircleStack,
+  HiOutlineCog6Tooth,
+  HiOutlineDocumentChartBar,
+  HiOutlineFolderPlus,
+  HiOutlineHome,
+  HiOutlineTruck,
+  HiOutlineUsers,
+} from "react-icons/hi2";
 
 const NavList = styled.ul`
   display: flex;
@@ -6,7 +21,7 @@ const NavList = styled.ul`
   gap: 0.8rem;
 `;
 
-const Link = styled.a`
+const StyledNavLink = styled(NavLink)`
   &:link,
   &:visited {
     display: flex;
@@ -44,3 +59,84 @@ const Link = styled.a`
     color: var(--color-brand-600);
   }
 `;
+function MainNav() {
+  return (
+    <nav>
+      <NavList>
+        <li>
+          <StyledNavLink to="/dashboard">
+            <HiOutlineHome />
+            Inicio
+          </StyledNavLink>
+        </li>
+        <li>
+          <StyledNavLink to="/attendance">
+            <HiOutlineCalendarDays />
+            Asistencias
+          </StyledNavLink>
+        </li>
+        <li>
+          <StyledNavLink to="/expenses">
+            <HiOutlineCircleStack />
+            Gastos
+          </StyledNavLink>
+        </li>
+        <li>
+          <StyledNavLink to="/payments">
+            <HiOutlineBanknotes /> Pagos
+          </StyledNavLink>
+        </li>
+        <li>
+          <StyledNavLink to="/register">
+            <HiOutlineFolderPlus />
+            Registro
+          </StyledNavLink>
+        </li>
+        <li>
+          <StyledNavLink to="/reports">
+            <HiOutlineDocumentChartBar />
+            Reportes
+          </StyledNavLink>
+        </li>
+        <li>
+          <StyledNavLink to="/schools">
+            <HiOutlineBuildingLibrary />
+            Escuelas
+          </StyledNavLink>
+        </li>
+        <li>
+          <StyledNavLink to="/statistics">
+            <HiOutlineChartBar />
+            Estadísticas
+          </StyledNavLink>
+        </li>
+        <li>
+          <StyledNavLink to="/students">
+            <HiOutlineAcademicCap />
+            Alumnos
+          </StyledNavLink>
+        </li>
+        <li>
+          <StyledNavLink to="/suppliers">
+            <HiOutlineTruck />
+            Proveedores
+          </StyledNavLink>
+        </li>
+        <li>
+          <StyledNavLink to="/users">
+            <HiOutlineUsers />
+            Usuarios
+          </StyledNavLink>
+        </li>
+        <li>
+          <StyledNavLink to="/settings">
+            <HiOutlineCog6Tooth />
+            Configuración
+          </StyledNavLink>
+        </li>
+      </NavList>
+    </nav>
+  );
+}
+
+export default MainNav;

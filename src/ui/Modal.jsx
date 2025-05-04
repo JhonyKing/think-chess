@@ -1,4 +1,6 @@
 import styled from "styled-components";
+import { HiXMark } from "react-icons/hi2";
+import { createPortal } from "react-dom";
 
 const StyledModal = styled.div`
   position: fixed;
@@ -10,6 +12,7 @@ const StyledModal = styled.div`
   box-shadow: var(--shadow-lg);
   padding: 3.2rem 4rem;
   transition: all 0.5s;
+  z-index: 1000;
 `;
 
 const Overlay = styled.div`
@@ -18,9 +21,9 @@ const Overlay = styled.div`
   left: 0;
   width: 100%;
   height: 100vh;
-  background-color: var(--backdrop-color);
+  background-color: rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(4px);
-  z-index: 1000;
+  z-index: 999;
   transition: all 0.5s;
 `;
 
@@ -42,9 +45,23 @@ const Button = styled.button`
   & svg {
     width: 2.4rem;
     height: 2.4rem;
-    /* Sometimes we need both */
-    /* fill: var(--color-grey-500);
-    stroke: var(--color-grey-500); */
     color: var(--color-grey-500);
   }
 `;
+
+function Modal({ children, onClose, className = "" }) {
+  return createPortal(
+    <>
+      <Overlay onClick={onClose} />
+      <StyledModal className={className}>
+        <Button onClick={onClose}>
+          <HiXMark />
+        </Button>
+        {children}
+      </StyledModal>
+    </>,
+    document.body
+  );
+}
+
+export default Modal;

@@ -1,3 +1,9 @@
 {
-  "extends": "react-app"
+  "extends": "react-app",
+  "rules": {
+    "react/prop-types": "off"
+  }
 }
+
+//Le dice a ESLint que use las reglas predefinidas que vienen con Create React App.
+//Aunque estás usando Vite, estas reglas siguen siendo útiles porque están pensadas para proyectos React.

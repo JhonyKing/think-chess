@@ -1,13 +1,14 @@
 import Heading from "../ui/Heading";
 import Row from "../ui/Row";
+import PaymentsTable from "../features/payments/PaymentsTable";
 
-function Register() {
+function Payments() {
   return (
     <Row type="horizontal">
-      <Heading as="h1">All Register</Heading>
-      <p>TEST</p>
+      <Heading as="h1">All Payments</Heading>
+      <PaymentsTable />
     </Row>
   );
 }
 
-export default Register;
+export default Payments;

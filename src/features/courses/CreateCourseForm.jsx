@@ -3,7 +3,7 @@ import styled from "styled-components";
 import toast from "react-hot-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import Input from "../../ui/input";
+import Input from "../../ui/Input";
 import FormRow from "../../ui/FormRow";
 import Button from "../../ui/Button";
 import SpinnerMini from "../../ui/SpinnerMini";

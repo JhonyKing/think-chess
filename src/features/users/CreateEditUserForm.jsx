@@ -2,7 +2,7 @@ import { useForm } from "react-hook-form";
 import styled from "styled-components";
 import { useEffect, useState } from "react";
 
-import Input from "../../ui/input";
+import Input from "../../ui/Input";
 import FormRow from "../../ui/FormRow";
 import Button from "../../ui/Button";
 import Checkbox from "../../ui/Checkbox";

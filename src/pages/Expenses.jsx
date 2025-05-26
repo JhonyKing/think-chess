@@ -4,10 +4,18 @@ import ExpensesTable from "../features/expenses/ExpensesTable";
 
 function Expenses() {
   return (
-    <Row type="horizontal">
-      <Heading as="h1">All Expenses</Heading>
-      <ExpensesTable />
-    </Row>
+    <>
+      <Row
+        type="horizontal"
+        style={{ justifyContent: "space-between", alignItems: "center" }}
+      >
+        <Heading as="h1">Gastos</Heading>
+      </Row>
+
+      <Row>
+        <ExpensesTable />
+      </Row>
+    </>
   );
 }
 

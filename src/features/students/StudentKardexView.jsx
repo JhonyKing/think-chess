@@ -1,46 +1,40 @@
 import styled from "styled-components";
 import { formatInTimeZone } from "date-fns-tz";
 import { es } from "date-fns/locale";
-import Modal from "../../ui/Modal";
 
 const KardexLayout = styled.div`
-  padding: 2rem; // Add some padding inside the modal content area
+  padding: 2rem;
   display: grid;
   grid-template-columns: 1fr 2fr; // Image column and data column
   gap: 3rem;
-  /* Remove fixed height and scroll */
-  /* max-height: 80vh; */
-  /* overflow-y: auto; */
+  width: 80rem; // Set a width for the view content
+  max-width: 90vw;
 `;
 
 const StudentImage = styled.img`
   width: 100%;
-  max-height: 30rem; // Approx 13cm equivalent height, adjust as needed
-  object-fit: contain; // Use contain to avoid cropping, or cover if preferred
+  max-height: 30rem;
+  object-fit: contain;
   border-radius: var(--border-radius-md);
-  background-color: var(
-    --color-grey-100
-  ); // Background for images without transparency
+  background-color: var(--color-grey-100);
 `;
 
 const DataGrid = styled.div`
   display: grid;
-  /* Force 2 columns */
   grid-template-columns: 1fr 1fr;
-  gap: 2.4rem 2rem; // REDUCED row gap to 2.4rem, column gap to 2rem
+  gap: 2.4rem 2rem;
 `;
 
 const DataItem = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 0.6rem; // REDUCED gap between label and value to 0.6rem
+  gap: 0.6rem;
 `;
 
 const Label = styled.span`
   font-size: 1.2rem;
   font-weight: 600;
   text-transform: uppercase;
-
   background-color: var(--color-grey-200);
   color: var(--color-grey-700);
   padding: 0.4rem 0.8rem;
@@ -52,18 +46,14 @@ const Label = styled.span`
 const Value = styled.span`
   font-size: 1.4rem;
   color: var(--color-grey-700);
-  word-break: break-word; // Prevent long text from overflowing harshly
-`;
-
-const StyledModal = styled(Modal)`
-  max-width: 100rem; // Adjust modal width as needed
-  width: 100%;
+  word-break: break-word;
 `;
 
 const Title = styled.h2`
   font-size: 2.4rem;
   font-weight: 600;
   margin-bottom: 3rem;
+  text-align: center; // Center the title
 `;
 
 // Helper for date formatting
@@ -83,31 +73,35 @@ const formatDate = (dateString) => {
 // Helper for boolean formatting
 const formatBoolean = (value) => (value ? "Sí" : "No");
 
-function StudentKardexModal({ isOpen, onClose, student }) {
-  if (!isOpen || !student) return null;
+/**
+ * Component to display the Kardex information for a student.
+ * Assumes it will be rendered inside a Modal.Window.
+ *
+ * @param {object} props
+ * @param {object} props.student - The student object containing data to display.
+ */
+function StudentKardexView({ student /*, onCloseModal */ }) {
+  if (!student) {
+    console.error("StudentKardexView rendered without a student prop.");
+    return <p>Error: No se encontró información del estudiante.</p>;
+  }
 
-  // Create full name for title
   const fullName = `${student.Nombre || ""} ${student.ApellidoPaterno || ""} ${
     student.ApellidoMaterno || ""
   }`.trim();
 
   return (
-    <StyledModal onClose={onClose}>
+    <>
       <Title>Kardex del Estudiante: {fullName}</Title>
       <KardexLayout>
         <div>
-          {" "}
-          {/* Image Column */}
           <StudentImage
-            src={student.URLImagen || "default-user.jpg"} // Use placeholder if no image
+            src={student.URLImagen || "default-user.jpg"}
             alt={`Foto de ${fullName}`}
-            onError={(e) => (e.target.src = "default-user.jpg")} // Fallback image on error
+            onError={(e) => (e.target.src = "default-user.jpg")}
           />
         </div>
-
         <DataGrid>
-          {" "}
-          {/* Data Column */}
           <DataItem>
             <Label>Número de Control</Label>
             <Value>{student.NumeroControl || "N/A"}</Value>
@@ -197,8 +191,8 @@ function StudentKardexModal({ isOpen, onClose, student }) {
           </DataItem>
         </DataGrid>
       </KardexLayout>
-    </StyledModal>
+    </>
   );
 }
 
-export default StudentKardexModal;
+export default StudentKardexView;

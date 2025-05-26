@@ -1,89 +1,98 @@
 import styled from "styled-components";
-import { useState } from "react";
+import { useState, useMemo, useContext } from "react";
 import Spinner from "../../ui/Spinner";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getStudents,
   getLatestNumeroControlForCurrentYear,
+  deleteStudent,
 } from "../../services/apiStudents";
 import StudentRow from "./StudentRow";
 import Input from "../../ui/Input";
 import Button from "../../ui/Button";
-import AddStudentModal from "./AddStudentModal";
 import SpinnerMini from "../../ui/SpinnerMini";
 import { toast } from "react-hot-toast";
-import StudentKardexModal from "./StudentKardexModal";
+import Modal, { ModalContext } from "../../ui/Modal";
+import CreateStudentForm from "./CreateStudentForm";
+import StudentKardexView from "./StudentKardexView";
+import ConfirmDelete from "../../ui/ConfirmDelete";
+import { IoMdAdd } from "react-icons/io";
+import { HiChevronUp, HiChevronDown, HiGift } from "react-icons/hi";
+import Empty from "../../ui/Empty";
+import Table from "../../ui/Table";
+import BirthdaysTable from "./BirthdaysTable";
 
-const Table = styled.div`
-  border: 1px solid var(--color--grey-200);
-  font-size: 1.4rem;
-  background-color: var(--color-grey-80);
-  border-radius: 7px;
-  overflow-x: auto;
-  max-height: 70vh;
-  width: 100%;
+const TableContainer = styled.div`
+  /* overflow-x: auto; */ /* Remove */
+  overflow: auto; /* Handle both scrolls */
+  max-height: 75vh; /* Limit height */
+  /* width: 100%; */ /* Remove width */
 `;
 
-const TableHeader = styled.header`
-  display: grid;
-  grid-template-columns: 10rem 20rem 10rem 10rem 35rem 25rem 25rem 15rem 15rem 30rem 8rem 25rem 8rem 8rem 8rem 8rem 15rem 8rem 15rem 15rem 20rem 20rem 12rem;
-  column-gap: 2rem;
+const TableOperations = styled.div`
+  display: flex;
   align-items: center;
-  text-align: center;
+  gap: 1.6rem;
+  margin-bottom: 1.6rem;
+`;
 
-  background-color: var(--color-grey-50);
-  border-bottom: 1px solid var(--color-grey-100);
+const SortButton = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: inherit;
+  color: inherit;
   text-transform: uppercase;
   letter-spacing: 0.4px;
-  font-weight: 600;
-  color: var(--color-grey-600);
-  padding: 1.6rem 2.4rem;
-  min-width: max-content;
+  padding: 0;
+  text-align: center;
+  width: 100%;
+  justify-content: center;
 
-  & > div {
-    cursor: pointer;
-    user-select: none;
-
-    &:hover {
-      color: var(--color-primary-600);
-    }
+  &:hover {
+    color: var(--color-grey-800);
   }
 
-  & > div:last-child {
-    cursor: default;
-    &:hover {
-      color: var(--color-grey-600);
-    }
+  & svg {
+    width: 1.4rem;
+    height: 1.4rem;
   }
-`;
-
-const FilterContainer = styled.div`
-  display: flex;
-  gap: 1.6rem;
-  align-items: center;
-  margin-bottom: 2rem;
-  justify-content: space-between;
-`;
-
-const FilterInput = styled(Input)`
-  max-width: 300px;
 `;
 
 function StudentsTable() {
-  const [filterValue, setFilterValue] = useState("");
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
-  const [isAddEditModalOpen, setIsAddEditModalOpen] = useState(false);
+  const { isLoading, data: allStudents } = useQuery({
+    queryKey: ["students"],
+    queryFn: getStudents,
+  });
+
+  const queryClient = useQueryClient();
+  const { open: openModal } = useContext(ModalContext);
+
   const [studentToEdit, setStudentToEdit] = useState(null);
+  const [selectedStudentForKardex, setSelectedStudentForKardex] =
+    useState(null);
+  const [studentToDelete, setStudentToDelete] = useState(null);
   const [nextNumeroControl, setNextNumeroControl] = useState("");
   const [isGeneratingNum, setIsGeneratingNum] = useState(false);
 
-  const [isKardexModalOpen, setIsKardexModalOpen] = useState(false);
-  const [selectedStudentForKardex, setSelectedStudentForKardex] =
-    useState(null);
+  const [filterValue, setFilterValue] = useState("");
+  const [sortConfig, setSortConfig] = useState({
+    key: "Nombre",
+    direction: "asc",
+  });
 
-  const { isLoading, data: students } = useQuery({
-    queryKey: ["students"],
-    queryFn: getStudents,
+  const { isLoading: isDeleting, mutate: mutateDelete } = useMutation({
+    mutationFn: deleteStudent,
+    onSuccess: () => {
+      toast.success(`Estudiante eliminado`);
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      setStudentToDelete(null);
+    },
+    onError: (err) => toast.error(err.message),
   });
 
   const handleSort = (key) => {
@@ -98,10 +107,13 @@ function StudentsTable() {
     });
   };
 
-  const filteredAndSortedStudents = students
-    ?.filter((student) => {
-      if (!filterValue) return true;
-      const searchTerm = filterValue.toLowerCase();
+  const handleFilterChange = (e) => setFilterValue(e.target.value);
+
+  const filteredStudents = useMemo(() => {
+    if (!allStudents) return [];
+    const searchTerm = filterValue.toLowerCase();
+    return allStudents.filter((student) => {
+      if (!searchTerm) return true;
       return (
         student.NumeroControl?.toString().toLowerCase().includes(searchTerm) ||
         `${student.Nombre} ${student.ApellidoPaterno} ${student.ApellidoMaterno}`
@@ -111,9 +123,12 @@ function StudentsTable() {
         student.Correo?.toLowerCase().includes(searchTerm) ||
         student.Tutor?.toLowerCase().includes(searchTerm)
       );
-    })
-    ?.sort((a, b) => {
-      if (!sortConfig.key) return 0;
+    });
+  }, [allStudents, filterValue]);
+
+  const sortedStudents = useMemo(() => {
+    if (!filteredStudents.length || !sortConfig.key) return filteredStudents;
+    return [...filteredStudents].sort((a, b) => {
       const aValue = a[sortConfig.key];
       const bValue = b[sortConfig.key];
       if (aValue === bValue) return 0;
@@ -143,211 +158,273 @@ function StudentsTable() {
       }
       return 0;
     });
+  }, [filteredStudents, sortConfig]);
 
-  const handleAddStudent = async () => {
+  const handlePrepareAdd = async () => {
     setIsGeneratingNum(true);
     try {
       const latestNum = await getLatestNumeroControlForCurrentYear();
-
       const currentYear = new Date().getFullYear().toString().slice(-2);
       const prefix = `${currentYear}100`;
-      let nextSeqNum = 0;
-
+      let nextSeqNum = 1;
       if (latestNum && latestNum.startsWith(prefix)) {
         const lastSeq = parseInt(latestNum.slice(prefix.length), 10);
-        if (!isNaN(lastSeq)) {
-          nextSeqNum = lastSeq + 1;
-        }
+        if (!isNaN(lastSeq)) nextSeqNum = lastSeq + 1;
       }
-
       const nextSeqStr = nextSeqNum.toString().padStart(3, "0");
-      const generatedNumeroControl = `${prefix}${nextSeqStr}`;
-
-      setNextNumeroControl(generatedNumeroControl);
+      setNextNumeroControl(`${prefix}${nextSeqStr}`);
       setStudentToEdit(null);
-      setIsAddEditModalOpen(true);
-    } catch (error) {
-      console.error("Failed to generate NumeroControl:", error);
-      toast.error(error.message || "Error al generar número de control.");
+      setSelectedStudentForKardex(null);
+      setStudentToDelete(null);
+    } catch (err) {
+      toast.error(err.message || "Error al generar número de control.");
+      console.error("Failed to generate NumeroControl:", err);
     } finally {
       setIsGeneratingNum(false);
     }
   };
 
-  const handleEditStudent = (student) => {
+  const handlePrepareEdit = (student) => {
+    setNextNumeroControl("");
     setStudentToEdit(student);
-    setNextNumeroControl("");
-    setIsAddEditModalOpen(true);
-  };
-
-  const handleCloseAddEditModal = () => {
-    setIsAddEditModalOpen(false);
-    setStudentToEdit(null);
-    setNextNumeroControl("");
-  };
-
-  const handleOpenKardex = (student) => {
-    setSelectedStudentForKardex(student);
-    setIsKardexModalOpen(true);
-  };
-
-  const handleCloseKardex = () => {
-    setIsKardexModalOpen(false);
     setSelectedStudentForKardex(null);
+    setStudentToDelete(null);
+  };
+
+  const handlePrepareKardex = (student) => {
+    setStudentToEdit(null);
+    setSelectedStudentForKardex(student);
+    setStudentToDelete(null);
+  };
+
+  const handlePrepareDelete = (student) => {
+    setStudentToEdit(null);
+    setSelectedStudentForKardex(null);
+    setStudentToDelete(student);
+    openModal?.("delete-student");
+  };
+
+  const handleCloseAndResetState = () => {
+    setStudentToEdit(null);
+    setSelectedStudentForKardex(null);
+    setNextNumeroControl("");
+    setStudentToDelete(null);
   };
 
   if (isLoading) return <Spinner />;
 
+  const columnWidths =
+    "10rem 20rem 10rem 10rem 35rem 25rem 25rem 15rem 15rem 30rem 8rem 25rem 8rem 8rem 8rem 8rem 15rem 8rem 15rem 15rem 20rem 20rem 12rem";
+
+  const renderSortIcon = (field) => {
+    if (sortConfig.key !== field) return null;
+    return sortConfig.direction === "asc" ? <HiChevronUp /> : <HiChevronDown />;
+  };
+
   return (
     <>
-      <FilterContainer>
-        <FilterInput
+      <TableOperations>
+        <Input
           type="text"
           placeholder="Buscar estudiante..."
           value={filterValue}
-          onChange={(e) => setFilterValue(e.target.value)}
+          onChange={handleFilterChange}
+          style={{ width: "30rem" }}
         />
-        <Button onClick={handleAddStudent} disabled={isGeneratingNum}>
-          {isGeneratingNum ? <SpinnerMini /> : "Agregar Estudiante"}
-        </Button>
-      </FilterContainer>
+        <div style={{ marginLeft: "auto", display: "flex", gap: "1rem" }}>
+          <Modal.Open opens="birthdays-modal">
+            <Button
+              variation="secondary"
+              size="medium"
+              aria-label="Cumpleañeros del mes"
+            >
+              <HiGift style={{ marginRight: "0.4rem" }} />
+              Cumpleañeros
+            </Button>
+          </Modal.Open>
+          <Modal.Open opens="student-form">
+            <Button onClick={handlePrepareAdd} disabled={isGeneratingNum}>
+              {isGeneratingNum ? (
+                <SpinnerMini />
+              ) : (
+                <>
+                  <IoMdAdd style={{ marginRight: "0.4rem" }} /> Agregar
+                  Estudiante
+                </>
+              )}
+            </Button>
+          </Modal.Open>
+        </div>
+      </TableOperations>
 
-      <Table role="table">
-        <TableHeader role="row">
-          <div onClick={() => handleSort("NumeroControl")}>
-            # Control{" "}
-            {sortConfig.key === "NumeroControl" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Nombre")}>
-            Nombre{" "}
-            {sortConfig.key === "Nombre" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("ApellidoPaterno")}>
-            Apellido P.{" "}
-            {sortConfig.key === "ApellidoPaterno" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("ApellidoMaterno")}>
-            Apellido M.{" "}
-            {sortConfig.key === "ApellidoMaterno" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("NombreEscuela")}>
-            Escuela{" "}
-            {sortConfig.key === "NombreEscuela" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("QuienRecoge1")}>
-            Persona Autorizada 1{" "}
-            {sortConfig.key === "QuienRecoge1" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("QuienRecoge2")}>
-            Persona Autorizada 2{" "}
-            {sortConfig.key === "QuienRecoge2" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("FechaNacimiento")}>
-            Fecha Nac.{" "}
-            {sortConfig.key === "FechaNacimiento" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Telefono")}>
-            Teléfono{" "}
-            {sortConfig.key === "Telefono" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Correo")}>
-            Correo{" "}
-            {sortConfig.key === "Correo" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Activo")}>
-            Activo{" "}
-            {sortConfig.key === "Activo" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Tutor")}>
-            Tutor{" "}
-            {sortConfig.key === "Tutor" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Grado")}>
-            Grado{" "}
-            {sortConfig.key === "Grado" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Grupo")}>
-            Grupo{" "}
-            {sortConfig.key === "Grupo" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Beca")}>
-            Beca{" "}
-            {sortConfig.key === "Beca" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("PorcentajeBeca")}>
-            Beca %{" "}
-            {sortConfig.key === "PorcentajeBeca" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Profesor")}>
-            Profesor{" "}
-            {sortConfig.key === "Profesor" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Rango")}>
-            Rango{" "}
-            {sortConfig.key === "Rango" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("FechaInscripcion")}>
-            Inscripción{" "}
-            {sortConfig.key === "FechaInscripcion" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("FechaBaja")}>
-            Baja{" "}
-            {sortConfig.key === "FechaBaja" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Nick")}>
-            Nick{" "}
-            {sortConfig.key === "Nick" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div onClick={() => handleSort("Password")}>
-            Password{" "}
-            {sortConfig.key === "Password" &&
-              (sortConfig.direction === "asc" ? "↑" : "↓")}
-          </div>
-          <div>Acciones</div>
-        </TableHeader>
-        {filteredAndSortedStudents?.map((student) => (
-          <StudentRow
-            student={student}
-            key={student.NumeroControl}
-            onEdit={() => handleEditStudent(student)}
-            onKardexClick={() => handleOpenKardex(student)}
+      <TableContainer>
+        <Table columns={columnWidths} role="table">
+          <Table.Header role="row">
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("NumeroControl")}>
+                # Control {renderSortIcon("NumeroControl")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Nombre")}>
+                Nombre {renderSortIcon("Nombre")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("ApellidoPaterno")}>
+                Apellido P. {renderSortIcon("ApellidoPaterno")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("ApellidoMaterno")}>
+                Apellido M. {renderSortIcon("ApellidoMaterno")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("NombreEscuela")}>
+                Escuela {renderSortIcon("NombreEscuela")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("QuienRecoge1")}>
+                Persona Autorizada 1 {renderSortIcon("QuienRecoge1")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("QuienRecoge2")}>
+                Persona Autorizada 2 {renderSortIcon("QuienRecoge2")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("FechaNacimiento")}>
+                Fecha Nac. {renderSortIcon("FechaNacimiento")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Telefono")}>
+                Teléfono {renderSortIcon("Telefono")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Correo")}>
+                Correo {renderSortIcon("Correo")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Activo")}>
+                Activo {renderSortIcon("Activo")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Tutor")}>
+                Tutor {renderSortIcon("Tutor")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Grado")}>
+                Grado {renderSortIcon("Grado")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Grupo")}>
+                Grupo {renderSortIcon("Grupo")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Beca")}>
+                Beca {renderSortIcon("Beca")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("PorcentajeBeca")}>
+                Beca % {renderSortIcon("PorcentajeBeca")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Profesor")}>
+                Profesor {renderSortIcon("Profesor")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Rango")}>
+                Rango {renderSortIcon("Rango")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("FechaInscripcion")}>
+                Inscripción {renderSortIcon("FechaInscripcion")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("FechaBaja")}>
+                Baja {renderSortIcon("FechaBaja")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Nick")}>
+                Nick {renderSortIcon("Nick")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>
+              <SortButton onClick={() => handleSort("Password")}>
+                Password {renderSortIcon("Password")}
+              </SortButton>
+            </div>
+            <div style={{ textAlign: "center" }}>Acciones</div>
+          </Table.Header>
+
+          <Table.Body
+            data={sortedStudents}
+            render={(student) => (
+              <StudentRow
+                key={student.NumeroControl}
+                student={student}
+                onEdit={() => handlePrepareEdit(student)}
+                onKardexClick={() => handlePrepareKardex(student)}
+                onPrepareDelete={handlePrepareDelete}
+              />
+            )}
           />
-        ))}
-      </Table>
+        </Table>
+      </TableContainer>
 
-      <AddStudentModal
-        isOpen={isAddEditModalOpen}
-        onClose={handleCloseAddEditModal}
-        studentToEdit={studentToEdit}
-        generatedNumeroControl={nextNumeroControl}
-      />
+      <Modal.Window name="student-form">
+        <CreateStudentForm
+          studentToEdit={studentToEdit}
+          numeroControlProp={nextNumeroControl}
+          onCloseModal={handleCloseAndResetState}
+        />
+      </Modal.Window>
 
-      <StudentKardexModal
-        isOpen={isKardexModalOpen}
-        onClose={handleCloseKardex}
-        student={selectedStudentForKardex}
-      />
+      <Modal.Window name="student-kardex">
+        <StudentKardexView student={selectedStudentForKardex} />
+      </Modal.Window>
+
+      <Modal.Window name="delete-student">
+        <ConfirmDelete
+          resourceName={`estudiante ${studentToDelete?.Nombre || ""} ${
+            studentToDelete?.ApellidoPaterno || ""
+          }`}
+          disabled={isDeleting}
+          onConfirm={() => {
+            if (studentToDelete?.NumeroControl) {
+              mutateDelete(studentToDelete.NumeroControl);
+            } else {
+              toast.error("No se pudo identificar al estudiante a eliminar.");
+              setStudentToDelete(null);
+            }
+          }}
+          onCloseModal={() => setStudentToDelete(null)}
+        />
+      </Modal.Window>
+
+      <Modal.Window name="birthdays-modal">
+        <BirthdaysTable students={allStudents || []} />
+      </Modal.Window>
+
+      {!isLoading && sortedStudents.length === 0 && (
+        <Empty resourceName="estudiantes con ese filtro" />
+      )}
     </>
   );
 }

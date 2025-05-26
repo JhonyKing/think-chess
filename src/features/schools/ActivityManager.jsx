@@ -4,7 +4,7 @@ import styled from "styled-components";
 import toast from "react-hot-toast";
 
 import Heading from "../../ui/Heading";
-import Input from "../../ui/Input";
+import Input from "../../ui/input";
 import Button from "../../ui/Button";
 import Spinner from "../../ui/Spinner";
 import Empty from "../../ui/Empty";
@@ -120,10 +120,11 @@ function ActivityManager({ courseId }) {
           value={newActivityName}
           onChange={(e) => setNewActivityName(e.target.value)}
           disabled={isAdding || !courseId}
-          style={{ flexGrow: 1 }} // Allow input to grow
+          style={{ flexGrow: 1 }}
         />
         <Button
-          size="small"
+          size="medium"
+          style={{ padding: "0.8rem 2.4rem", marginLeft: "1rem" }}
           disabled={isAdding || !courseId || !newActivityName.trim()}
         >
           {isAdding ? <SpinnerMini /> : <HiPlus />} Añadir

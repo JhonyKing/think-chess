@@ -20,21 +20,41 @@ const StyledConfirmDelete = styled.div`
   }
 `;
 
-function ConfirmDelete({ resourceName, onConfirm, disabled }) {
+/**
+ * A reusable confirmation dialog for delete operations.
+ *
+ * @param {object} props
+ * @param {string} props.resourceName - The name of the resource being deleted (e.g., "usuario PiensaAncira").
+ * @param {function} props.onConfirm - Function to call when deletion is confirmed.
+ * @param {boolean} props.disabled - Whether the confirm button should be disabled (e.g., during mutation).
+ * @param {function} [props.onCloseModal] - Function to call to close the modal (optional, typically passed by Modal.Window).
+ */
+function ConfirmDelete({ resourceName, onConfirm, disabled, onCloseModal }) {
+  const handleConfirm = () => {
+    onConfirm();
+    // No need to call onCloseModal here usually, as Modal.Window handles closing
+    // However, if onConfirm is async and you want to close *after* success,
+    // the mutation hook's onSuccess should handle closing.
+  };
+
   return (
     <StyledConfirmDelete>
-      <Heading as="h3">Delete {resourceName}</Heading>
+      <Heading as="h3">Eliminar {resourceName}</Heading>
       <p>
-        Are you sure you want to delete this {resourceName} permanently? This
-        action cannot be undone.
+        ¿Seguro que desea borrar este registro ({resourceName})? Esta acción es
+        irreversible.
       </p>
 
       <div>
-        <Button variation="secondary" disabled={disabled}>
-          Cancel
+        <Button
+          variation="secondary"
+          disabled={disabled}
+          onClick={onCloseModal} // Use onCloseModal passed by Modal.Window for cancel
+        >
+          Cancelar
         </Button>
-        <Button variation="danger" disabled={disabled}>
-          Delete
+        <Button variation="danger" disabled={disabled} onClick={handleConfirm}>
+          Eliminar
         </Button>
       </div>
     </StyledConfirmDelete>

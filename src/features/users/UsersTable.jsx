@@ -11,7 +11,7 @@ import Modal from "../../ui/Modal"; // Import the compound Modal component
 import CreateEditUserForm from "./CreateEditUserForm"; // Import the form directly
 import Button from "../../ui/Button"; // Import Button
 import Empty from "../../ui/Empty";
-import Input from "../../ui/input"; // Changed to lowercase import
+import Input from "../../ui/Input";
 
 // Add a wrapper to handle horizontal scrolling if needed
 const TableContainer = styled.div`

@@ -6,7 +6,7 @@ import { HiPencil } from "react-icons/hi"; // Import icon for title
 import { useState, useEffect, useMemo } from "react";
 import supabase from "../../services/supabase";
 
-import Input from "../../ui/input";
+import Input from "../../ui/Input";
 import FormRow from "../../ui/FormRow";
 import Button from "../../ui/Button";
 import Checkbox from "../../ui/Checkbox"; // Assuming Checkbox component exists

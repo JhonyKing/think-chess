@@ -5,12 +5,12 @@ import {
   HiOutlineBanknotes,
   HiOutlineBuildingLibrary,
   HiOutlineCalendarDays,
-  HiOutlineChartBar,
   HiOutlineCircleStack,
+  /* HiOutlineChartBar,
   HiOutlineCog6Tooth,
   HiOutlineDocumentChartBar,
   HiOutlineFolderPlus,
-  HiOutlineHome,
+  HiOutlineHome, */
   HiOutlineTruck,
   HiOutlineUsers,
 } from "react-icons/hi2";
@@ -63,12 +63,12 @@ function MainNav() {
   return (
     <nav>
       <NavList>
-        <li>
+        {/* <li>
           <StyledNavLink to="/dashboard">
             <HiOutlineHome />
             Inicio
           </StyledNavLink>
-        </li>
+        </li> */}
         <li>
           <StyledNavLink to="/attendance">
             <HiOutlineCalendarDays />
@@ -86,30 +86,30 @@ function MainNav() {
             <HiOutlineBanknotes /> Pagos
           </StyledNavLink>
         </li>
-        <li>
+        {/*  <li>
           <StyledNavLink to="/register">
             <HiOutlineFolderPlus />
             Registro
           </StyledNavLink>
-        </li>
+        </li> 
         <li>
           <StyledNavLink to="/reports">
             <HiOutlineDocumentChartBar />
             Reportes
           </StyledNavLink>
-        </li>
+        </li>*/}
         <li>
           <StyledNavLink to="/schools">
             <HiOutlineBuildingLibrary />
             Escuelas
           </StyledNavLink>
         </li>
-        <li>
+        {/*   <li>
           <StyledNavLink to="/statistics">
             <HiOutlineChartBar />
             Estadísticas
           </StyledNavLink>
-        </li>
+        </li> */}
         <li>
           <StyledNavLink to="/students">
             <HiOutlineAcademicCap />
@@ -128,12 +128,12 @@ function MainNav() {
             Usuarios
           </StyledNavLink>
         </li>
-        <li>
+        {/*  <li>
           <StyledNavLink to="/settings">
             <HiOutlineCog6Tooth />
             Configuración
           </StyledNavLink>
-        </li>
+        </li> */}
       </NavList>
     </nav>
   );

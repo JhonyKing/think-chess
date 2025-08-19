@@ -15,6 +15,7 @@ export function useCreateUser() {
     onSuccess: () => {
       toast.success("Nuevo usuario creado exitosamente.");
       queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["professorsList"] });
     },
     onError: (err) => {
       console.error("Create user error:", err);

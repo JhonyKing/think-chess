@@ -17,6 +17,7 @@ export function useUpdateUser() {
     onSuccess: () => {
       toast.success("Usuario actualizado exitosamente.");
       queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["professorsList"] });
     },
     onError: (err) => {
       console.error("Update user error:", err);

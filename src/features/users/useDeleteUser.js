@@ -16,6 +16,7 @@ export function useDeleteUser() {
       toast.success("Usuario eliminado exitosamente.");
       // Invalidate queries to refetch the user list after deletion
       queryClient.invalidateQueries({ queryKey: ["users"] });
+      queryClient.invalidateQueries({ queryKey: ["professorsList"] });
     },
     onError: (err) => {
       console.error("Delete user error:", err);

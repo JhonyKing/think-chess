@@ -9,6 +9,7 @@ import Form from "../../ui/Form";
 import Button from "../../ui/Button";
 import { createEditStudent } from "../../services/apiStudents";
 import { getSchoolsList } from "../../services/apiSchools";
+import { getProfessors } from "../../services/apiProfessors";
 import FileInput from "../../ui/FileInput";
 import Select from "../../ui/Select";
 import SpinnerMini from "../../ui/SpinnerMini";
@@ -74,7 +75,7 @@ const ErrorSpan = styled.span`
 function CreateStudentForm({
   studentToEdit = {},
   onCloseModal,
-  generatedNumeroControl,
+  numeroControlProp,
 }) {
   const currentStudent = studentToEdit || {};
   const {
@@ -130,10 +131,10 @@ function CreateStudentForm({
   }, [imageField, isEditSession, existingImageUrl]);
 
   useEffect(() => {
-    if (!isEditSession && generatedNumeroControl) {
-      setValue("NumeroControl", generatedNumeroControl);
+    if (!isEditSession && numeroControlProp) {
+      setValue("NumeroControl", numeroControlProp);
     }
-  }, [generatedNumeroControl, isEditSession, setValue]);
+  }, [numeroControlProp, isEditSession, setValue]);
 
   useEffect(() => {
     if (!hasBeca) {
@@ -150,6 +151,15 @@ function CreateStudentForm({
   } = useQuery({
     queryKey: ["schoolsList"],
     queryFn: getSchoolsList,
+  });
+
+  const {
+    data: professorsData,
+    isLoading: isLoadingProfessors,
+    error: professorsError,
+  } = useQuery({
+    queryKey: ["professorsList"],
+    queryFn: getProfessors,
   });
 
   const { mutate: createStudent, isLoading: isCreating } = useMutation({
@@ -178,7 +188,8 @@ function CreateStudentForm({
     },
   });
 
-  const isWorking = isCreating || isEditing || isLoadingSchools;
+  const isWorking =
+    isCreating || isEditing || isLoadingSchools || isLoadingProfessors;
 
   function onSubmit(data) {
     console.log("onSubmit called with data:", data);
@@ -201,7 +212,7 @@ function CreateStudentForm({
       delete studentData.NumeroControl;
       editStudent(studentData);
     } else {
-      studentData.NumeroControl = generatedNumeroControl || data.NumeroControl;
+      studentData.NumeroControl = numeroControlProp || data.NumeroControl;
       if (studentData.Activo === undefined) studentData.Activo = true;
       createStudent(studentData);
     }
@@ -229,6 +240,16 @@ function CreateStudentForm({
         })),
       ]
     : [{ value: "", label: "Cargando escuelas..." }];
+
+  const professorOptions = professorsData
+    ? [
+        { value: "", label: "-- Selecciona un profesor --" },
+        ...professorsData.map((professor) => ({
+          value: professor.Nombre,
+          label: professor.Nombre,
+        })),
+      ]
+    : [{ value: "", label: "Cargando profesores..." }];
 
   return (
     <StyledForm onSubmit={handleSubmit(onSubmit, onError)}>
@@ -443,7 +464,19 @@ function CreateStudentForm({
       <FormGrid $columns="1fr 1fr">
         <Field>
           <Label htmlFor="Profesor">Profesor</Label>
-          <Input type="text" id="Profesor" {...register("Profesor")} />
+          {isLoadingProfessors ? (
+            <SpinnerMini />
+          ) : professorsError ? (
+            <ErrorSpan>Error al cargar profesores</ErrorSpan>
+          ) : (
+            <Select
+              id="Profesor"
+              options={professorOptions}
+              {...register("Profesor")}
+              disabled={isWorking || isLoadingProfessors}
+            />
+          )}
+          {errors.Profesor && <ErrorSpan>{errors.Profesor.message}</ErrorSpan>}
         </Field>
         <Field>
           <Label htmlFor="Rango">Rango</Label>
@@ -454,7 +487,6 @@ function CreateStudentForm({
               { value: "Bronce", label: "Bronce" },
               { value: "Plata", label: "Plata" },
               { value: "Oro", label: "Oro" },
-              { value: "Platino", label: "Platino" },
               { value: "Diamante", label: "Diamante" },
               { value: "Rey del tablero", label: "Rey del tablero" },
             ]}

@@ -1,4 +1,6 @@
 import styled, { css } from "styled-components";
+import { usePaymentsByStudentAndMonth } from "./usePayments";
+import MultipleReceiptsSelector from "./MultipleReceiptsSelector";
 
 const Button = styled.button`
   width: 4rem;
@@ -42,14 +44,46 @@ function PaymentStatusButton({
   onShowNoAplica,
   onShowNuevoPago,
   status: statusProp,
+  numeroControl, // Para buscar múltiples pagos
+  mesPagado, // Para buscar múltiples pagos
+  idCurso, // CRÍTICO: Para filtrar por mismo curso
 }) {
-  // Permitir pasar el status como prop para control externo
+  // Obtener múltiples pagos si se proporcionan numeroControl, mesPagado e idCurso
+  const { payments } = usePaymentsByStudentAndMonth(
+    numeroControl,
+    mesPagado,
+    idCurso
+  );
+
+  // Si hay múltiples pagos para este mes, SIEMPRE usar el selector especial
+  // para permitir ver todos los recibos, sin importar si está liquidado o no
+  if (
+    payments &&
+    payments.length > 1 &&
+    numeroControl &&
+    mesPagado &&
+    idCurso
+  ) {
+    return (
+      <MultipleReceiptsSelector
+        numeroControl={numeroControl}
+        mesPagado={mesPagado}
+        idCurso={idCurso}
+        latestPayment={payment}
+        onShowReceipt={onShowReceipt}
+        onShowAbono={onShowAbono}
+        onShowNuevoPago={onShowNuevoPago}
+      />
+    );
+  }
+
+  // Comportamiento normal para un solo pago o sin datos de contexto
   let status = statusProp || "NP";
   if (!statusProp) {
     if (payment) {
       if (payment.Monto === 0) status = "NA";
-      else if (payment.Liquidado) status = "PA";
-      else status = "AB";
+      else if (payment.Liquidado) status = "PA"; // Verde si está liquidado
+      else status = "AB"; // Naranja si no está liquidado
     }
   }
 

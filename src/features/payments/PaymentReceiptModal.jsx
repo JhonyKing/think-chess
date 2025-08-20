@@ -45,11 +45,13 @@ function PaymentReceiptModal({
   onNuevoAbono,
   onEdit,
   onDeleted,
+  onCloseModal,
   tipoCorreo = "agradecimiento",
   onSendCorreo,
 }) {
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [showCorreoModal, setShowCorreoModal] = useState(false);
+  const [showDisculpasModal, setShowDisculpasModal] = useState(false);
   const [correoEditado, setCorreoEditado] = useState("");
   const [enviandoCorreo, setEnviandoCorreo] = useState(false);
 
@@ -92,16 +94,25 @@ function PaymentReceiptModal({
       await deletePago(payment.NumeroRecibo);
       toast.success("Recibo eliminado");
       setShowConfirmDelete(false);
-      if (onDeleted) onDeleted();
-      // Preguntar si desea enviar correo de disculpas
+      // Mostrar modal para preguntar si desea enviar correo de disculpas
       setTimeout(() => {
-        if (window.confirm("¿Desea enviar un correo de disculpas al alumno?")) {
-          handleOpenCorreo("disculpas");
-        }
-      }, 300);
+        setShowDisculpasModal(true);
+      }, 100);
     } catch (e) {
       toast.error("Error al eliminar el recibo");
+      setShowConfirmDelete(false);
     }
+  }
+
+  function handleEnviarDisculpas() {
+    setShowDisculpasModal(false);
+    handleOpenCorreo("disculpas");
+  }
+
+  function handleNoEnviarDisculpas() {
+    setShowDisculpasModal(false);
+    if (onDeleted) onDeleted();
+    if (onCloseModal) onCloseModal();
   }
   function handleOpenCorreo(tipo) {
     let plantilla = plantillas[tipo || tipoCorreo] || "";
@@ -119,10 +130,14 @@ function PaymentReceiptModal({
     toast.success("Correo enviado (simulado)");
     setShowCorreoModal(false);
     setEnviandoCorreo(false);
+    if (onDeleted) onDeleted();
     if (onSendCorreo) onSendCorreo();
+    if (onCloseModal) onCloseModal();
   }
   function handleCloseCorreo() {
     setShowCorreoModal(false);
+    if (onDeleted) onDeleted();
+    if (onCloseModal) onCloseModal();
   }
   return (
     <ModalContent>
@@ -138,7 +153,7 @@ function PaymentReceiptModal({
         <Label>Monto:</Label> <Value>${payment.Monto?.toFixed(2) || "-"}</Value>
       </Field>
       <Field>
-        <Label>Mes Pagado:</Label> <Value>{payment.MesPagado || "-"}</Value>
+        <Label>Descripción:</Label> <Value>{payment.MesPagado || "-"}</Value>
       </Field>
       <Field>
         <Label>Fecha/Hora:</Label> <Value>{fechaFormateada}</Value>
@@ -200,12 +215,12 @@ function PaymentReceiptModal({
         </Button>
       </Footer>
       {showConfirmDelete && (
-        <ModalContent
-          as="div"
+        <div
           style={{
             background: "#fff",
             border: "1px solid #ccc",
             borderRadius: 8,
+            padding: "2rem",
             marginTop: 16,
           }}
         >
@@ -221,15 +236,15 @@ function PaymentReceiptModal({
               Sí, cancelar recibo
             </Button>
           </Footer>
-        </ModalContent>
+        </div>
       )}
       {showCorreoModal && (
-        <ModalContent
-          as="div"
+        <div
           style={{
             background: "#fff",
             border: "1px solid #ccc",
             borderRadius: 8,
+            padding: "2rem",
             marginTop: 16,
           }}
         >
@@ -266,7 +281,36 @@ function PaymentReceiptModal({
               {enviandoCorreo ? "Enviando..." : "Enviar correo"}
             </Button>
           </Footer>
-        </ModalContent>
+        </div>
+      )}
+      {showDisculpasModal && (
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #ccc",
+            borderRadius: 8,
+            padding: "2rem",
+            marginTop: 16,
+          }}
+        >
+          <Title>¿Desea enviar un correo de disculpas al alumno?</Title>
+          <Footer>
+            <Button
+              type="button"
+              variation="secondary"
+              onClick={handleNoEnviarDisculpas}
+            >
+              No, cancelar
+            </Button>
+            <Button
+              type="button"
+              variation="primary"
+              onClick={handleEnviarDisculpas}
+            >
+              Sí, enviar correo de disculpas
+            </Button>
+          </Footer>
+        </div>
       )}
     </ModalContent>
   );

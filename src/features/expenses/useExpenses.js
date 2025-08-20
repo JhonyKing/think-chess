@@ -37,6 +37,8 @@ export function useCreateExpense() {
       toast.success("Gasto creado exitosamente");
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["maxExpenseId"] });
+      // Los gastos están relacionados con proveedores
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -53,6 +55,8 @@ export function useEditExpense() {
     onSuccess: () => {
       toast.success("Gasto actualizado exitosamente");
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      // Los gastos están relacionados con proveedores
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -70,6 +74,8 @@ export function useDeleteExpense() {
       toast.success("Gasto eliminado exitosamente");
       queryClient.invalidateQueries({ queryKey: ["expenses"] });
       queryClient.invalidateQueries({ queryKey: ["maxExpenseId"] });
+      // Los gastos están relacionados con proveedores
+      queryClient.invalidateQueries({ queryKey: ["suppliers"] });
     },
     onError: (err) => toast.error(err.message),
   });

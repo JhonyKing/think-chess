@@ -76,7 +76,7 @@ async function uploadLogo(file, schoolName) {
 function CreateEditSchoolForm({ schoolToEdit = {}, onCloseModal }) {
   const queryClient = useQueryClient();
   // Safeguard: Use an empty object if schoolToEdit is null/undefined
-  const currentSchool = schoolToEdit || {};
+  const currentSchool = useMemo(() => schoolToEdit || {}, [schoolToEdit]);
   // const { NombreEscuela: editSchoolName, ...editValues } = currentSchool;
   // const isEditSession = Boolean(editSchoolName);
   const isEditSession = !!(
@@ -180,6 +180,11 @@ function CreateEditSchoolForm({ schoolToEdit = {}, onCloseModal }) {
     onSuccess: () => {
       toast.success("Nueva escuela creada exitosamente.");
       queryClient.invalidateQueries({ queryKey: ["schools"] });
+      queryClient.invalidateQueries({ queryKey: ["schoolsList"] });
+      // Las escuelas están relacionadas con estudiantes, pagos y gastos
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
       reset();
       onCloseModal?.();
     },
@@ -197,6 +202,11 @@ function CreateEditSchoolForm({ schoolToEdit = {}, onCloseModal }) {
     onSuccess: () => {
       toast.success("Escuela actualizada exitosamente.");
       queryClient.invalidateQueries({ queryKey: ["schools"] });
+      queryClient.invalidateQueries({ queryKey: ["schoolsList"] });
+      // Las escuelas están relacionadas con estudiantes, pagos y gastos
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
       reset(); // Reset form after successful update
       onCloseModal?.(); // Close modal on success
     },

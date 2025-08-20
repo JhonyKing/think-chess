@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo, useCallback, useContext } from "react";
 import styled from "styled-components";
+import { useQueryClient } from "@tanstack/react-query";
 import supabase from "../../services/supabase";
+import { toast } from "react-hot-toast";
 import PaymentStatusButton from "./PaymentStatusButton";
 import Menus from "../../ui/Menus";
 import { HiPencil, HiTrash, HiEye } from "react-icons/hi2";
@@ -8,6 +10,10 @@ import Modal, { ModalContext } from "../../ui/Modal";
 import CreateStudentForm from "../students/CreateStudentForm";
 import StudentKardexView from "../students/StudentKardexView";
 import ConfirmDelete from "../../ui/ConfirmDelete";
+import {
+  useStudentsBySchool,
+  usePaymentsByStudentsAndCourse,
+} from "./useStudentsPayments";
 import PaymentReceiptModal from "./PaymentReceiptModal";
 import NewPaymentModal from "./NewPaymentModal";
 import jsPDF from "jspdf";
@@ -122,10 +128,23 @@ function getMonthsBetween(start, end) {
 }
 
 function PaymentsTable({ course, schoolId }) {
-  const [students, setStudents] = useState([]);
-  const [payments, setPayments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingPayments, setLoadingPayments] = useState(true);
+  // Usar React Query para estudiantes y pagos
+  const {
+    data: students = [],
+    isLoading: loading,
+    error: studentsError,
+  } = useStudentsBySchool(schoolId);
+
+  const numeroControls = useMemo(
+    () => students.map((s) => s.NumeroControl),
+    [students]
+  );
+
+  const {
+    data: payments = [],
+    isLoading: loadingPayments,
+    error: paymentsError,
+  } = usePaymentsByStudentsAndCourse(numeroControls, course?.IDCurso);
   const [sortBy, setSortBy] = useState("deuda");
   const [sortDirection, setSortDirection] = useState("desc");
 
@@ -149,111 +168,395 @@ function PaymentsTable({ course, schoolId }) {
   const [schoolsList, setSchoolsList] = useState([]);
   useEffect(() => {
     async function fetchSchools() {
-      const { data, error } = await supabase
+      console.log("🔄 EJECUTANDO CONSULTA A SUPABASE...");
+
+      // Probar diferentes variaciones del nombre de columna
+      let data, error;
+
+      // SOLUCIÓN: Seleccionar SOLO las columnas que SÍ existen
+      console.log(
+        "🧪 Seleccionando columnas que SÍ existen: NombreEscuela, URLLogo"
+      );
+      const result = await supabase
         .from("ESCUELA")
-        .select("Nombre, URLLogo, IDEscuela");
-      if (!error && data) setSchoolsList(data);
+        .select("NombreEscuela, URLLogo");
+
+      console.log("📊 Resultado con columnas específicas:", result);
+      data = result.data;
+      error = result.error;
+
+      // Diagnosticar las propiedades de cada escuela
+      if (data && data.length > 0) {
+        console.log("🔍 DIAGNÓSTICO COMPLETO DE PROPIEDADES:");
+        data.forEach((school, index) => {
+          console.log(`🏫 Escuela ${index + 1}:`, school);
+          console.log(`📋 NombreEscuela: "${school.NombreEscuela}"`);
+          console.log(`📋 URLLogo: "${school.URLLogo}"`);
+        });
+      }
+
+      console.log("📊 RESULTADO DE CONSULTA SUPABASE:");
+      console.log("📊 Error:", error);
+      console.log("📊 Data cruda:", data);
+
+      if (error) {
+        console.error("❌ Error en consulta Supabase:", error);
+      }
+
+      if (data) {
+        console.log("✅ Datos recibidos de Supabase:", data.length, "escuelas");
+        data.forEach((school, index) => {
+          console.log(`📋 Escuela ${index + 1} RAW:`, {
+            Nombre: school.Nombre,
+            URLLogo: school.URLLogo,
+            URLLogo_type: typeof school.URLLogo,
+            IDEscuela: school.IDEscuela,
+            "Todas las propiedades": Object.keys(school),
+          });
+        });
+        setSchoolsList(data);
+      }
     }
     fetchSchools();
   }, []);
 
   const handleGenerarPdf = useCallback(async () => {
-    const doc = new jsPDF();
-    // --- Obtener logos desde la lista de escuelas ---
-    // Logo academia: buscar por nombre "Piensa Ajedrez" o IDEscuela fijo
+    const doc = new jsPDF("p", "mm", "a4"); // Formato vertical A4
+
+    // --- DEBUGGING COMPLETO DE LOGOS ---
+    console.log("🔍 DEBUGGING LOGOS:");
+    console.log("📋 Escuelas disponibles:", schoolsList);
+    console.log("📋 Total escuelas:", schoolsList.length);
+
+    // Mostrar TODAS las escuelas y sus URLs
+    console.log("📚 LISTA COMPLETA DE ESCUELAS EN BD:");
+    schoolsList.forEach((school, index) => {
+      console.log(`🏫 Escuela ${index + 1}:`, {
+        Nombre: school.Nombre,
+        URLLogo: school.URLLogo,
+        IDEscuela: school.IDEscuela,
+        "Nombre length": school.Nombre?.length,
+        "Tiene URLLogo": !!school.URLLogo,
+      });
+    });
+
+    // Mostrar información del curso actual
+    console.log("📋 INFORMACIÓN DEL CURSO ACTUAL:");
+    console.log("🎯 course?.NombreEscuela:", course?.NombreEscuela);
+    console.log("🎯 students[0]?.NombreEscuela:", students[0]?.NombreEscuela);
+    console.log("🎯 schoolId:", schoolId);
+
+    // Logo academia: buscar por nombre "Academia" o "Piensa Ajedrez"
+    console.log("🔍 BUSCANDO ACADEMIA:");
+    console.log(
+      "🔍 Lista de escuelas para buscar:",
+      schoolsList.map((s) => s.NombreEscuela)
+    );
+
     const escuelaAcademia = schoolsList.find(
       (s) =>
-        s.Nombre?.toLowerCase().includes("piensa ajedrez") || s.IDEscuela === 1
+        s.NombreEscuela?.toLowerCase().includes("academia") ||
+        s.NombreEscuela?.toLowerCase().includes("piensa ajedrez")
     );
-    const urlLogoAcademia =
-      escuelaAcademia?.URLLogo || "/logos/piensa-ajedrez-logo.png";
-    // Logo escuela: buscar por nombre o IDEscuela del curso
-    let escuelaCurso = null;
-    if (course?.NombreEscuela) {
-      escuelaCurso = schoolsList.find((s) => s.Nombre === course.NombreEscuela);
-    } else if (course?.IDEscuela) {
-      escuelaCurso = schoolsList.find((s) => s.IDEscuela === course.IDEscuela);
+    console.log(
+      "🎯 Academia encontrada:",
+      escuelaAcademia?.NombreEscuela || "NO ENCONTRADA"
+    );
+    if (escuelaAcademia) {
+      console.log("✅ URL Logo Academia encontrada:", escuelaAcademia.URLLogo);
     }
-    const urlLogoEscuela = escuelaCurso?.URLLogo || "";
-    // --- Utilidad para convertir imagen a dataURL (copiada de asistencia) ---
+
+    // Logo escuela: buscar por el nombre EXACTO de la escuela del curso
+    const nombreEscuelaBuscada =
+      course?.NombreEscuela || students[0]?.NombreEscuela;
+    console.log("🔍 BUSCANDO ESCUELA DEL CURSO:");
+    console.log("🎯 Nombre a buscar:", `"${nombreEscuelaBuscada}"`);
+
+    let escuelaCurso = null;
+    if (nombreEscuelaBuscada) {
+      // Buscar coincidencia EXACTA primero
+      escuelaCurso = schoolsList.find(
+        (s) => s.NombreEscuela === nombreEscuelaBuscada
+      );
+      console.log(
+        "🧪 Búsqueda exacta:",
+        escuelaCurso?.NombreEscuela || "NO ENCONTRADA"
+      );
+
+      if (!escuelaCurso) {
+        console.log(
+          "❌ No se encontró coincidencia exacta, probando sin distinción de mayúsculas..."
+        );
+        // Si no hay coincidencia exacta, buscar sin case sensitivity
+        escuelaCurso = schoolsList.find(
+          (s) =>
+            s.NombreEscuela?.toLowerCase() ===
+            nombreEscuelaBuscada?.toLowerCase()
+        );
+        console.log(
+          "🧪 Búsqueda sin case:",
+          escuelaCurso?.NombreEscuela || "NO ENCONTRADA"
+        );
+      }
+
+      if (!escuelaCurso) {
+        console.log(
+          "❌ No se encontró coincidencia exacta ni por case, probando coincidencia parcial..."
+        );
+        // Si aún no hay match, buscar coincidencia parcial
+        escuelaCurso = schoolsList.find((s) =>
+          s.NombreEscuela?.toLowerCase().includes(
+            nombreEscuelaBuscada?.toLowerCase()
+          )
+        );
+        console.log(
+          "🧪 Búsqueda parcial:",
+          escuelaCurso?.NombreEscuela || "NO ENCONTRADA"
+        );
+      }
+
+      // ÚLTIMO INTENTO: mostrar todas las opciones para debug
+      if (!escuelaCurso) {
+        console.log("❌ ÚLTIMO INTENTO - Comparando manualmente:");
+        schoolsList.forEach((school, index) => {
+          console.log(
+            `🔍 Escuela ${index + 1}: "${
+              school.NombreEscuela
+            }" vs "${nombreEscuelaBuscada}"`
+          );
+          console.log(
+            `🔍 ¿Coincide exacto?`,
+            school.NombreEscuela === nombreEscuelaBuscada
+          );
+          console.log(
+            `🔍 ¿Coincide lowercase?`,
+            school.NombreEscuela?.toLowerCase() ===
+              nombreEscuelaBuscada?.toLowerCase()
+          );
+          console.log(
+            `🔍 ¿Contiene?`,
+            school.NombreEscuela?.toLowerCase().includes(
+              nombreEscuelaBuscada?.toLowerCase()
+            )
+          );
+        });
+      }
+    }
+
+    console.log(
+      "🎯 Escuela del curso encontrada:",
+      escuelaCurso?.NombreEscuela || "NO ENCONTRADA"
+    );
+    if (escuelaCurso) {
+      console.log("✅ URL Logo Escuela encontrada:", escuelaCurso.URLLogo);
+    }
+
+    console.log("🎓 Academia encontrada:", escuelaAcademia);
+    console.log("🏫 Escuela del curso encontrada:", escuelaCurso);
+
+    // URLs de los logos desde la base de datos
+    const urlLogoAcademia = escuelaAcademia?.URLLogo;
+    const urlLogoEscuela = escuelaCurso?.URLLogo;
+
+    console.log("🔗 URL Logo Academia:", urlLogoAcademia);
+    console.log("🔗 URL Logo Escuela:", urlLogoEscuela);
+
+    // PROBAR CARGA DIRECTA DE URLS
+    if (urlLogoAcademia) {
+      console.log("🧪 PROBANDO carga directa de logo academia...");
+      try {
+        const testResponse = await fetch(urlLogoAcademia);
+        console.log(
+          "✅ Respuesta fetch academia:",
+          testResponse.status,
+          testResponse.ok
+        );
+      } catch (error) {
+        console.log("❌ Error fetch academia:", error);
+      }
+    }
+
+    if (urlLogoEscuela) {
+      console.log("🧪 PROBANDO carga directa de logo escuela...");
+      try {
+        const testResponse = await fetch(urlLogoEscuela);
+        console.log(
+          "✅ Respuesta fetch escuela:",
+          testResponse.status,
+          testResponse.ok
+        );
+      } catch (error) {
+        console.log("❌ Error fetch escuela:", error);
+      }
+    }
+
+    // --- Utilidad que SÍ FUNCIONA (copiada de Attendance.jsx) ---
     async function imageToDataUrl(url) {
-      console.log(`[imageToDataUrl] Attempting to load image from: ${url}`);
+      if (!url) {
+        console.log("❌ No hay URL para la imagen");
+        return null;
+      }
+
+      console.log(`🔄 Intentando cargar imagen: ${url}`);
+
       try {
         const response = await fetch(url);
         if (!response.ok) {
           console.log(
-            `[imageToDataUrl] Direct fetch failed for ${url}. Trying public folder path.`
+            `❌ Fetch directo falló para ${url}. Probando ruta pública...`
           );
           const publicUrl =
             window.location.origin + (url.startsWith("/") ? url : "/" + url);
-          console.log(`[imageToDataUrl] Fallback public URL: ${publicUrl}`);
+          console.log(`🔄 URL pública de fallback: ${publicUrl}`);
+
           const fallbackResponse = await fetch(publicUrl);
           if (!fallbackResponse.ok) {
             console.error(
-              `[imageToDataUrl] Failed to fetch image from ${url} (status: ${response.status}) and ${publicUrl} (status: ${fallbackResponse.status}).`
+              `❌ Falló fetch desde ${url} (status: ${response.status}) y ${publicUrl} (status: ${fallbackResponse.status}).`
             );
             return null;
           }
+
           const blob = await fallbackResponse.blob();
           return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => {
               console.log(
-                `[imageToDataUrl] Successfully converted blob from ${publicUrl} to Data URL.`
+                `✅ Imagen convertida exitosamente desde ${publicUrl}`
               );
               resolve(reader.result);
             };
             reader.onerror = (error) => {
-              console.error(
-                `[imageToDataUrl] FileReader error for ${publicUrl}:`,
-                error
-              );
+              console.error(`❌ Error FileReader para ${publicUrl}:`, error);
               reject(error);
             };
             reader.readAsDataURL(blob);
           });
         }
+
         const blob = await response.blob();
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onloadend = () => {
-            console.log(
-              `[imageToDataUrl] Successfully converted blob from ${url} to Data URL.`
-            );
+            console.log(`✅ Imagen convertida exitosamente desde ${url}`);
             resolve(reader.result);
           };
           reader.onerror = (error) => {
-            console.error(
-              `[imageToDataUrl] FileReader error for ${url}:`,
-              error
-            );
+            console.error(`❌ Error FileReader para ${url}:`, error);
             reject(error);
           };
           reader.readAsDataURL(blob);
         });
       } catch (error) {
-        console.error(
-          "[imageToDataUrl] General error converting image to Data URL:",
-          error,
-          "URL:",
-          url
-        );
+        console.error("❌ Error general cargando imagen:", error, "URL:", url);
         return null;
       }
     }
-    const logoAcademiaDataUrl = await imageToDataUrl(urlLogoAcademia);
-    const logoEscuelaDataUrl = urlLogoEscuela
-      ? await imageToDataUrl(urlLogoEscuela)
-      : null;
-    // --- Encabezado con logos ---
-    const logoWidth = 30,
-      logoHeight = 15,
-      pageMargin = 15;
+
+    // Función para calcular dimensiones manteniendo proporción
+    function calculateProportionalSize(
+      originalWidth,
+      originalHeight,
+      maxWidth,
+      maxHeight
+    ) {
+      const aspectRatio = originalWidth / originalHeight;
+
+      let width = maxWidth;
+      let height = maxWidth / aspectRatio;
+
+      // Si la altura calculada excede el máximo, ajustar por altura
+      if (height > maxHeight) {
+        height = maxHeight;
+        width = maxHeight * aspectRatio;
+      }
+
+      return { width, height };
+    }
+
+    // Función mejorada para obtener dimensiones de imagen
+    async function getImageDimensions(dataUrl) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          resolve({ width: img.width, height: img.height });
+        };
+        img.onerror = () => {
+          resolve({ width: 100, height: 100 }); // Fallback por defecto
+        };
+        img.src = dataUrl;
+      });
+    }
+
+    // Cargar logos CON DEBUGGING EXTREMO
+    console.log("🎯 INTENTANDO CARGAR LOGOS:");
+    console.log("🎯 URL Academia:", urlLogoAcademia);
+    console.log("🎯 URL Escuela:", urlLogoEscuela);
+
+    let logoAcademiaDataUrl = null;
+    let logoEscuelaDataUrl = null;
+
+    if (urlLogoAcademia) {
+      console.log("🔥 CARGANDO LOGO ACADEMIA...");
+      logoAcademiaDataUrl = await imageToDataUrl(urlLogoAcademia);
+      console.log(
+        "🔥 Resultado logo academia:",
+        logoAcademiaDataUrl ? "✅ CARGADO" : "❌ FALLÓ"
+      );
+    } else {
+      console.log("❌ No hay URL de logo academia");
+    }
+
+    if (urlLogoEscuela) {
+      console.log("🔥 CARGANDO LOGO ESCUELA...");
+      logoEscuelaDataUrl = await imageToDataUrl(urlLogoEscuela);
+      console.log(
+        "🔥 Resultado logo escuela:",
+        logoEscuelaDataUrl ? "✅ CARGADO" : "❌ FALLÓ"
+      );
+    } else {
+      console.log("❌ No hay URL de logo escuela");
+    }
+
+    // --- Configuración de página optimizada ---
     const pageWidth = doc.internal.pageSize.getWidth();
-    let currentY = 15;
+    const pageMargin = 10; // Reducido para más espacio
+    const maxLogoWidth = 25; // Ancho máximo para logos
+    const maxLogoHeight = 15; // Alto máximo para logos
+    let currentY = 10;
+
+    // --- Encabezado con logos más compacto ---
+    console.log("🖼️ AGREGANDO LOGOS AL PDF:");
+
     // Logo escuela (izquierda)
+    console.log("🖼️ Procesando logo escuela...");
+    console.log("🖼️ logoEscuelaDataUrl existe:", !!logoEscuelaDataUrl);
+    console.log(
+      "🖼️ logoEscuelaDataUrl length:",
+      logoEscuelaDataUrl?.length || 0
+    );
+
     if (logoEscuelaDataUrl) {
       try {
+        console.log("✅ AGREGANDO logo de escuela al PDF con proporciones");
+
+        // Obtener dimensiones originales de la imagen
+        const imageDimensions = await getImageDimensions(logoEscuelaDataUrl);
+        console.log("📐 Dimensiones originales logo escuela:", imageDimensions);
+
+        // Calcular dimensiones proporcionales
+        const { width: logoWidth, height: logoHeight } =
+          calculateProportionalSize(
+            imageDimensions.width,
+            imageDimensions.height,
+            maxLogoWidth,
+            maxLogoHeight
+          );
+
+        console.log(
+          `📏 Dimensiones finales logo escuela: ${logoWidth}x${logoHeight}`
+        );
+
         doc.addImage(
           logoEscuelaDataUrl,
           "PNG",
@@ -262,44 +565,96 @@ function PaymentsTable({ course, schoolId }) {
           logoWidth,
           logoHeight
         );
-      } catch {
-        doc.text("[Logo Escuela]", pageMargin, currentY + logoHeight / 2);
+        console.log("✅ Logo escuela agregado exitosamente con proporciones!");
+      } catch (error) {
+        console.error("❌ Error agregando logo escuela:", error);
+        doc.setFontSize(6);
+        doc.text(
+          `[Logo ${escuelaCurso?.NombreEscuela || "Escuela"}]`,
+          pageMargin,
+          currentY + maxLogoHeight / 2
+        );
       }
     } else {
-      doc.text("[Logo Escuela]", pageMargin, currentY + logoHeight / 2);
+      console.log("❌ No hay logoEscuelaDataUrl, usando texto placeholder");
+      doc.setFontSize(6);
+      doc.text(
+        `[Logo ${escuelaCurso?.NombreEscuela || "Escuela"}]`,
+        pageMargin,
+        currentY + maxLogoHeight / 2
+      );
     }
+
     // Logo academia (derecha)
+    console.log("🖼️ Procesando logo academia...");
+    console.log("🖼️ logoAcademiaDataUrl existe:", !!logoAcademiaDataUrl);
+    console.log(
+      "🖼️ logoAcademiaDataUrl length:",
+      logoAcademiaDataUrl?.length || 0
+    );
+
     if (logoAcademiaDataUrl) {
       try {
+        console.log("✅ AGREGANDO logo de academia al PDF con proporciones");
+
+        // Obtener dimensiones originales de la imagen
+        const imageDimensions = await getImageDimensions(logoAcademiaDataUrl);
+        console.log(
+          "📐 Dimensiones originales logo academia:",
+          imageDimensions
+        );
+
+        // Calcular dimensiones proporcionales
+        const { width: logoAcademiaWidth, height: logoAcademiaHeight } =
+          calculateProportionalSize(
+            imageDimensions.width,
+            imageDimensions.height,
+            maxLogoWidth,
+            maxLogoHeight
+          );
+
+        console.log(
+          `📏 Dimensiones finales logo academia: ${logoAcademiaWidth}x${logoAcademiaHeight}`
+        );
+
         doc.addImage(
           logoAcademiaDataUrl,
           "PNG",
-          pageWidth - logoWidth - pageMargin,
+          pageWidth - logoAcademiaWidth - pageMargin,
           currentY,
-          logoWidth,
-          logoHeight
+          logoAcademiaWidth,
+          logoAcademiaHeight
         );
-      } catch {
+        console.log("✅ Logo academia agregado exitosamente con proporciones!");
+      } catch (error) {
+        console.error("❌ Error agregando logo academia:", error);
+        doc.setFontSize(6);
         doc.text(
-          "[Logo Academia]",
-          pageWidth - logoWidth - pageMargin,
-          currentY + logoHeight / 2
+          `[Logo ${escuelaAcademia?.NombreEscuela || "Academia"}]`,
+          pageWidth - maxLogoWidth - pageMargin,
+          currentY + maxLogoHeight / 2
         );
       }
     } else {
+      console.log("❌ No hay logoAcademiaDataUrl, usando texto placeholder");
+      doc.setFontSize(6);
       doc.text(
-        "[Logo Academia]",
-        pageWidth - logoWidth - pageMargin,
-        currentY + logoHeight / 2
+        `[Logo ${escuelaAcademia?.NombreEscuela || "Academia"}]`,
+        pageWidth - maxLogoWidth - pageMargin,
+        currentY + maxLogoHeight / 2
       );
     }
-    currentY += logoHeight + 5;
-    // --- Encabezado profesional ---
-    doc.setFontSize(16);
+
+    currentY += maxLogoHeight + 5;
+
+    // --- Título principal más compacto ---
+    doc.setFontSize(14);
     doc.setFont("helvetica", "bold");
     doc.text("LISTA DE PAGOS", pageWidth / 2, currentY, { align: "center" });
-    currentY += 10;
-    doc.setFontSize(11);
+    currentY += 8;
+
+    // --- Información del curso más compacta ---
+    doc.setFontSize(9);
     doc.setFont("helvetica", "normal");
     doc.text(
       `ESCUELA: ${
@@ -308,8 +663,9 @@ function PaymentsTable({ course, schoolId }) {
       pageMargin,
       currentY
     );
-    doc.text(`CURSO: ${course?.IDCurso || "-"}`, pageWidth / 2 + 10, currentY);
-    currentY += 7;
+    currentY += 4;
+    doc.text(`CURSO: ${course?.IDCurso || "-"}`, pageMargin, currentY);
+    currentY += 4;
     doc.text(
       `CICLO: ${course?.InicioCurso?.slice(0, 4) || ""} - ${
         course?.FinCurso?.slice(0, 4) || ""
@@ -317,63 +673,138 @@ function PaymentsTable({ course, schoolId }) {
       pageMargin,
       currentY
     );
+    currentY += 4;
     doc.text(
-      `FECHA: ${new Date().toLocaleDateString()}`,
-      pageWidth / 2 + 10,
+      `FECHA: ${new Date().toLocaleDateString("es-ES")}`,
+      pageMargin,
       currentY
     );
-    currentY += 10;
-    // --- Tabla de alumnos ---
+    currentY += 8;
+
+    // --- Obtener lista de meses del curso ---
+    const months = course
+      ? getMonthsBetween(course.InicioCurso, course.FinCurso)
+      : [];
+
+    // --- Calcular ancho disponible y columnas ---
+    const availableWidth = pageWidth - pageMargin * 2;
+    const totalColumns = 6 + months.length; // 6 columnas fijas + meses
+
+    // Calcular ancho dinámico para que todo quepa
+    const maxCellWidth = availableWidth / totalColumns;
+
+    // Anchos ajustados según importancia (nombres más grandes)
+    const columnWidths = {
+      0: Math.min(8, maxCellWidth), // No.
+      1: Math.min(18, maxCellWidth), // No. Control
+      2: Math.min(28, maxCellWidth), // Apellido Paterno (más grande)
+      3: Math.min(28, maxCellWidth), // Apellido Materno (más grande)
+      4: Math.min(35, maxCellWidth), // Nombre(s) (más grande)
+      5: Math.min(12, maxCellWidth), // Inscripción (más pequeño)
+    };
+
+    // Ancho para meses (más pequeño para dar espacio a nombres)
+    const usedWidth = Object.values(columnWidths).reduce((a, b) => a + b, 0);
+    const remainingWidth = availableWidth - usedWidth;
+    const monthWidth = Math.max(6, remainingWidth / months.length); // Reducido de 8 a 6
+
+    // --- Crear tabla con inscripción y meses ---
+    const tableHeaders = [
+      "No.",
+      "Control",
+      "Ap. Paterno",
+      "Ap. Materno",
+      "Nombre(s)",
+      "Inscr.",
+      ...months.map((month) => month.slice(0, 3)), // Abreviar nombres de meses
+    ];
+
+    const tableBody = students.map((student, index) => {
+      const row = [
+        index + 1,
+        student.NumeroControl || "",
+        student.ApellidoPaterno || "",
+        student.ApellidoMaterno || "",
+        student.Nombre || "",
+        "", // Campo vacío para inscripción
+      ];
+
+      // Agregar campos vacíos para cada mes
+      months.forEach(() => {
+        row.push(""); // Campo vacío para llenar manualmente
+      });
+
+      return row;
+    });
+
+    // --- Configurar tabla optimizada ---
     autoTable(doc, {
-      head: [["No.", "No. Control", "Apellido P.", "Apellido M.", "Nombre(s)"]],
-      body: students.map((s, i) => [
-        i + 1,
-        s.NumeroControl,
-        s.ApellidoPaterno,
-        s.ApellidoMaterno,
-        s.Nombre,
-      ]),
+      head: [tableHeaders],
+      body: tableBody,
       startY: currentY,
       theme: "grid",
-      styles: { fontSize: 10 },
+      styles: {
+        fontSize: 5, // Fuente muy pequeña para que quepa todo
+        cellPadding: 1,
+        halign: "center",
+        valign: "middle",
+        lineWidth: 0.1,
+      },
+      headStyles: {
+        fillColor: [66, 165, 245],
+        textColor: 255,
+        fontStyle: "bold",
+        fontSize: 6,
+        cellPadding: 1,
+      },
+      columnStyles: {
+        0: { halign: "center", cellWidth: columnWidths[0] },
+        1: { halign: "center", cellWidth: columnWidths[1], fontSize: 5 },
+        2: { halign: "left", cellWidth: columnWidths[2], fontSize: 6 }, // Nombres más grandes
+        3: { halign: "left", cellWidth: columnWidths[3], fontSize: 6 }, // Nombres más grandes
+        4: { halign: "left", cellWidth: columnWidths[4], fontSize: 6 }, // Nombres más grandes
+        5: { halign: "center", cellWidth: columnWidths[5] },
+      },
+      // Configurar columnas de meses dinámicamente
+      didParseCell: function (data) {
+        if (data.column.index >= 6) {
+          // Columnas de meses (más pequeñas)
+          data.cell.styles.cellWidth = monthWidth;
+          data.cell.styles.halign = "center";
+          data.cell.styles.fontSize = 4; // Reducido de 5 a 4
+        }
+      },
+      margin: { left: pageMargin, right: pageMargin },
+      tableWidth: "wrap",
+      showHead: "everyPage",
+      // Asegurar que todo quepe en una página
+      pageBreak: "avoid",
     });
-    doc.save(`ListaPagos_${escuelaCurso?.Nombre || schoolId || ""}.pdf`);
+
+    // --- Pie de página con instrucciones más compacto ---
+    // --- Sin instrucciones (eliminadas por solicitud del usuario) ---
+
+    // --- Guardar el PDF ---
+    const fileName = `ListaPagos_${
+      escuelaCurso?.Nombre?.replace(/\s+/g, "_") || "Escuela"
+    }_${new Date().toISOString().slice(0, 10)}.pdf`;
+    doc.save(fileName);
   }, [students, payments, course, schoolId, schoolsList]);
 
+  // Manejo de errores
   useEffect(() => {
-    async function fetchStudents() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("ALUMNO")
-        .select(
-          "NumeroControl, Nombre, ApellidoPaterno, ApellidoMaterno, Activo, NombreEscuela, FechaNacimiento, Telefono, Correo, Tutor, Grado, Grupo, Beca, PorcentajeBeca, Profesor, Rango, FechaInscripcion, FechaBaja, Nick, Password, QuienRecoge1, QuienRecoge2, URLImagen"
-        )
-        .eq("Activo", true)
-        .eq("NombreEscuela", schoolId)
-        .order("ApellidoPaterno");
-      if (!error) setStudents(data);
-      setLoading(false);
+    if (studentsError) {
+      toast.error("Error al cargar estudiantes: " + studentsError.message);
     }
-    if (course && schoolId) fetchStudents();
-  }, [course, schoolId]);
+  }, [studentsError]);
 
   useEffect(() => {
-    async function fetchPayments() {
-      if (!students.length || !course) return;
-      setLoadingPayments(true);
-      const numeroControls = students.map((s) => s.NumeroControl);
-      const { data, error } = await supabase
-        .from("PAGO")
-        .select(
-          "NumeroRecibo,NumeroControl,IDCurso,MesPagado,Monto,Liquidado,FechaHora,MetodoPago,Nota,CantidadBeca,PorcentajeBeca"
-        )
-        .in("NumeroControl", numeroControls)
-        .eq("IDCurso", course.IDCurso);
-      if (!error) setPayments(data);
-      setLoadingPayments(false);
+    if (paymentsError) {
+      toast.error("Error al cargar pagos: " + paymentsError.message);
     }
-    fetchPayments();
-  }, [students, course]);
+  }, [paymentsError]);
+
+  const queryClient = useQueryClient();
 
   const months = useMemo(
     () => getMonthsBetween(course?.InicioCurso, course?.FinCurso),
@@ -381,14 +812,28 @@ function PaymentsTable({ course, schoolId }) {
   );
 
   // Helper para encontrar el pago correspondiente
+  // CRÍTICO: Si existe CUALQUIER pago liquidado, el mes está pagado (verde PA)
   const findPayment = useCallback(
     (numeroControl, mesPagado) => {
-      return payments.find(
+      const pagosCandidatos = payments.filter(
         (p) =>
           p.NumeroControl === numeroControl &&
           p.IDCurso === course.IDCurso &&
           p.MesPagado === mesPagado
       );
+
+      if (pagosCandidatos.length === 0) return undefined;
+      if (pagosCandidatos.length === 1) return pagosCandidatos[0];
+
+      // Si hay múltiples pagos:
+      // SIEMPRE priorizar cualquier pago que esté liquidado
+      const liquidado = pagosCandidatos.find((p) => p.Liquidado);
+      if (liquidado) return liquidado;
+
+      // Si ninguno está liquidado, devolver cualquiera (el más reciente)
+      return pagosCandidatos.sort(
+        (a, b) => new Date(b.FechaHora) - new Date(a.FechaHora)
+      )[0];
     },
     [payments, course]
   );
@@ -432,20 +877,21 @@ function PaymentsTable({ course, schoolId }) {
     return arr;
   }, [studentsWithDeuda, sortBy, sortDirection]);
 
-  // Refrescar pagos después de guardar
-  async function fetchPaymentsRefrescar() {
-    if (!students.length || !course) return;
-    setLoadingPayments(true);
-    const numeroControls = students.map((s) => s.NumeroControl);
-    const { data, error } = await supabase
-      .from("PAGO")
-      .select(
-        "NumeroRecibo,NumeroControl,IDCurso,MesPagado,Monto,Liquidado,FechaHora,MetodoPago,Nota,CantidadBeca,PorcentajeBeca"
-      )
-      .in("NumeroControl", numeroControls)
-      .eq("IDCurso", course.IDCurso);
-    if (!error) setPayments(data);
-    setLoadingPayments(false);
+  // Refrescar datos usando React Query
+  function fetchPaymentsRefrescar() {
+    // Invalidar queries para refrescar automáticamente
+    queryClient.invalidateQueries({ queryKey: ["studentsBySchool", schoolId] });
+    queryClient.invalidateQueries({
+      queryKey: [
+        "paymentsByStudentsAndCourse",
+        numeroControls,
+        course?.IDCurso,
+      ],
+    });
+    queryClient.invalidateQueries({ queryKey: ["students"] }); // También invalidar la lista general de estudiantes
+    queryClient.invalidateQueries({ queryKey: ["payments"] });
+    queryClient.invalidateQueries({ queryKey: ["paymentsByStudentAndMonth"] });
+    queryClient.invalidateQueries({ queryKey: ["lastPayment"] });
   }
 
   // Total alumnos registrados en la escuela
@@ -766,6 +1212,9 @@ function PaymentsTable({ course, schoolId }) {
                 <Td>
                   <PaymentStatusButton
                     payment={findPayment(student.NumeroControl, "Inscripcion")}
+                    numeroControl={student.NumeroControl}
+                    mesPagado="Inscripcion"
+                    idCurso={course.IDCurso}
                     onShowReceipt={handleShowReceipt}
                     onShowAbono={handleShowAbono}
                     onShowNoAplica={handleShowNoAplica}
@@ -778,6 +1227,9 @@ function PaymentsTable({ course, schoolId }) {
                   <Td key={m}>
                     <PaymentStatusButton
                       payment={findPayment(student.NumeroControl, m)}
+                      numeroControl={student.NumeroControl}
+                      mesPagado={m}
+                      idCurso={course.IDCurso}
                       onShowReceipt={handleShowReceipt}
                       onShowAbono={handleShowAbono}
                       onShowNoAplica={handleShowNoAplica}
@@ -821,7 +1273,10 @@ function PaymentsTable({ course, schoolId }) {
         {studentToEdit && (
           <CreateStudentForm
             studentToEdit={studentToEdit}
-            onCloseModal={() => setStudentToEdit(null)}
+            onCloseModal={() => {
+              setStudentToEdit(null);
+              fetchPaymentsRefrescar(); // Refrescar datos cuando se cierre el modal de edición
+            }}
           />
         )}
       </Modal.Window>
@@ -859,6 +1314,8 @@ function PaymentsTable({ course, schoolId }) {
             payment={selectedAbono}
             showNuevoAbonoButton
             tipoCorreo="abono"
+            onEdit={handleEditPayment}
+            onDeleted={handleDeletedPayment}
             onNuevoAbono={() =>
               handleShowNuevoPago(
                 students.find(

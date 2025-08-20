@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
 import styled from "styled-components";
 import Button from "../../ui/Button";
-import {
-  getBancos,
-  getNextNumeroRecibo,
-  createPago,
-} from "../../services/apiPayments";
-import { toast } from "react-hot-toast";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import supabase from "../../services/supabase";
+import {
+  useBancos,
+  useCreatePayment,
+  useUpdatePayment,
+  useNextNumeroRecibo,
+  useLastPaymentByStudent,
+  usePaymentsByStudentAndMonth,
+} from "./usePayments";
+import { toast } from "react-hot-toast";
 
 const ModalContent = styled.div`
   padding: 2.4rem 2rem;
@@ -73,82 +75,161 @@ function NewPaymentModal({
   onPagoGuardado,
   pagoEdit,
 }) {
-  const [bancos, setBancos] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { bancos = [], isLoading: isLoadingBancos } = useBancos();
+  const { createPayment, isCreating } = useCreatePayment();
+  const { updatePayment, isUpdating } = useUpdatePayment();
+  const { lastPayment } = useLastPaymentByStudent(student.NumeroControl);
+
+  // Generar número de recibo SOLO para nuevos pagos, NO para edición
+  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  const { nextNumero, isLoading: isGeneratingRecibo } = useNextNumeroRecibo(
+    pagoEdit ? null : today // Solo generar si NO es edición
+  );
+
+  // Obtener pagos existentes del mes para detectar si ya hay abonos DEL MISMO CURSO
+  const { payments: existingPayments } = usePaymentsByStudentAndMonth(
+    student.NumeroControl,
+    mesPagado,
+    idCurso // CRÍTICO: Solo buscar pagos del mismo curso
+  );
   const [form, setForm] = useState({
     NumeroRecibo: "",
     NumeroControl: student.NumeroControl,
     MesPagado: mesPagado,
     FechaHora: "",
     MetodoPago: "Efectivo",
-    IDBanco: "",
     Monto: 0,
     Nota: "",
     Notificado: false,
     Liquidado: true,
+    Abono: false, // Se calculará dinámicamente
     Beca: student.Beca || false,
     PorcentajeBeca: student.PorcentajeBeca || 0,
     CantidadBeca: 0,
     PagoNulo: false,
   });
+  const [selectedBanco, setSelectedBanco] = useState("");
   const [montoConBeca, setMontoConBeca] = useState(0);
   const [cantidadBeca, setCantidadBeca] = useState(0);
   const [error, setError] = useState("");
   const [showRecordatorioModal, setShowRecordatorioModal] = useState(false);
   const [correoEditado, setCorreoEditado] = useState("");
 
-  // Generar número de recibo y cargar bancos
+  const isWorking =
+    isCreating ||
+    isUpdating ||
+    isLoadingBancos ||
+    (!pagoEdit && isGeneratingRecibo);
+
+  // Inicializar formulario con datos de edición si existe
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      try {
-        const bancosData = await getBancos();
-        setBancos(bancosData);
-        if (pagoEdit) {
-          setForm({
-            ...form,
-            ...pagoEdit,
-            NumeroRecibo: pagoEdit.NumeroRecibo,
-            NumeroControl: pagoEdit.NumeroControl,
-            MesPagado: pagoEdit.MesPagado,
-            FechaHora: pagoEdit.FechaHora,
-            MetodoPago: pagoEdit.MetodoPago,
-            IDBanco: pagoEdit.IDBanco || "",
-            Monto: pagoEdit.Monto,
-            Nota: pagoEdit.Nota,
-            Notificado: pagoEdit.Notificado,
-            Liquidado: pagoEdit.Liquidado,
-            Beca: pagoEdit.Beca,
-            PorcentajeBeca: pagoEdit.PorcentajeBeca,
-            CantidadBeca: pagoEdit.CantidadBeca,
-            PagoNulo: pagoEdit.PagoNulo || false,
-          });
-          setLoading(false);
-          return;
+    if (pagoEdit) {
+      setForm((prevForm) => ({
+        ...prevForm,
+        ...pagoEdit,
+        NumeroRecibo: pagoEdit.NumeroRecibo,
+        NumeroControl: pagoEdit.NumeroControl,
+        MesPagado: pagoEdit.MesPagado,
+        FechaHora: pagoEdit.FechaHora,
+        MetodoPago: pagoEdit.MetodoPago,
+        Monto: pagoEdit.Monto,
+        Nota: pagoEdit.Nota,
+        Notificado: pagoEdit.Notificado,
+        Liquidado: pagoEdit.Liquidado,
+        Abono: pagoEdit.Abono || false,
+        Beca: pagoEdit.Beca,
+        PorcentajeBeca: pagoEdit.PorcentajeBeca,
+        CantidadBeca: pagoEdit.CantidadBeca,
+        PagoNulo: pagoEdit.PagoNulo || false,
+      }));
+
+      // Si está editando y es depósito, extraer banco de la nota
+      if (pagoEdit.MetodoPago === "Deposito" && pagoEdit.Nota) {
+        const bancoMatch = bancos.find((b) =>
+          pagoEdit.Nota.startsWith(b.NombreBanco)
+        );
+        if (bancoMatch) {
+          setSelectedBanco(String(bancoMatch.IDBanco));
         }
-        const now = new Date();
-        // Usar la hora local del usuario
-        const fechaRecibo =
-          now.getDate().toString().padStart(2, "0") +
-          (now.getMonth() + 1).toString().padStart(2, "0") +
-          now.getFullYear().toString().slice(-2);
-        const numeroRecibo = await getNextNumeroRecibo(fechaRecibo);
-        // Guardar la hora local en formato ISO (o puedes usar now.toLocaleString() si prefieres string local)
-        const fechaHora = now.toISOString();
-        setForm((f) => ({
-          ...f,
-          NumeroRecibo: numeroRecibo,
-          FechaHora: fechaHora,
-          Liquidado: true, // Por defecto marcado
-        }));
-      } catch (e) {
-        setError("Error al inicializar el formulario");
       }
-      setLoading(false);
+    } else {
+      // Para nuevo pago, generar número de recibo
+      const today = new Date();
+      const fechaHora = today.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+
+      setForm((prevForm) => ({
+        ...prevForm,
+        FechaHora: fechaHora,
+        NumeroRecibo: "", // Se genera después
+      }));
     }
-    init();
-    // eslint-disable-next-line
-  }, []);
+  }, [pagoEdit, bancos]);
+
+  // Precargar banco del último pago si es para un nuevo pago (no edición)
+  useEffect(() => {
+    if (
+      !pagoEdit &&
+      lastPayment &&
+      lastPayment.MetodoPago === "Deposito" &&
+      lastPayment.Nota
+    ) {
+      console.log("Precargando método de pago del último pago:", lastPayment);
+      setForm((prevForm) => ({
+        ...prevForm,
+        MetodoPago: "Deposito",
+      }));
+
+      // Intentar extraer el banco de la nota si está al principio
+      const bancoMatch = bancos.find((b) =>
+        lastPayment.Nota.startsWith(b.NombreBanco)
+      );
+      if (bancoMatch) {
+        setSelectedBanco(String(bancoMatch.IDBanco));
+      }
+    }
+  }, [lastPayment, pagoEdit, bancos]);
+
+  // Establecer número de recibo cuando esté disponible SOLO para nuevos pagos
+  useEffect(() => {
+    if (!pagoEdit && nextNumero && !form.NumeroRecibo) {
+      console.log(
+        "Estableciendo número de recibo para NUEVO pago:",
+        nextNumero
+      );
+      setForm((prevForm) => ({
+        ...prevForm,
+        NumeroRecibo: nextNumero,
+      }));
+    }
+  }, [nextNumero, pagoEdit, form.NumeroRecibo]);
+
+  // useEffect para detectar abonos existentes y configurar automáticamente
+  useEffect(() => {
+    if (!pagoEdit && existingPayments && existingPayments.length > 0) {
+      console.log(
+        "Pagos existentes detectados para este mes y curso:",
+        existingPayments
+      );
+
+      // CRÍTICO: Solo considerar como abonos si el campo Abono=true en BD
+      const hasAbonos = existingPayments.some((p) => p.Abono === true);
+
+      if (hasAbonos) {
+        console.log(
+          "Se detectaron ABONOS VERDADEROS (Abono=true) del mismo curso, configurando como abono automáticamente"
+        );
+        setForm((prevForm) => ({
+          ...prevForm,
+          Liquidado: false, // Si hay abonos del mismo curso, el siguiente será un abono también
+          Abono: true,
+        }));
+      } else {
+        console.log(
+          "No se detectaron abonos verdaderos (Abono=true) del mismo curso, configuración normal"
+        );
+      }
+    }
+  }, [existingPayments, pagoEdit]);
 
   // Calcular monto con beca en tiempo real
   useEffect(() => {
@@ -188,56 +269,120 @@ function NewPaymentModal({
     setForm((f) => ({
       ...f,
       [name]: type === "checkbox" ? checked : value,
+      // Si marca "Pago nulo", poner monto a 0
       ...(name === "PagoNulo" && checked ? { Monto: 0 } : {}),
+      // Si desmarca "Pago nulo" y el monto es 0, limpiarlo para que ingrese un monto válido
+      ...(name === "PagoNulo" && !checked && f.Monto === 0
+        ? { Monto: "" }
+        : {}),
+      // LÓGICA DE ABONOS CORREGIDA:
+      // Si desmarca "Liquidado", automáticamente marcar "Abono" como true
+      ...(name === "Liquidado" && !checked ? { Abono: true } : {}),
+      // Si marca "Liquidado", automáticamente desmarcar "Abono" como false (a menos que ya existan abonos previos)
+      ...(name === "Liquidado" && checked ? { Abono: false } : {}),
     }));
   }
 
-  async function handleSubmit(e) {
+  function handleSubmit(e) {
     e.preventDefault();
     setError("");
-    try {
-      // Concatenar banco en Nota si es depósito
-      let notaFinal = form.Nota || "";
-      if (form.MetodoPago === "Deposito") {
-        const bancoNombre =
-          bancos.find((b) => String(b.IDBanco) === String(form.IDBanco))
-            ?.NombreBanco || "";
-        notaFinal = bancoNombre + (notaFinal ? " " + notaFinal : "");
-      }
-      // Limpiar objeto pago para enviar solo los campos válidos y tipos correctos
-      const pago = {
-        NumeroRecibo: form.NumeroRecibo,
-        NumeroControl: form.NumeroControl,
-        Monto: form.PagoNulo ? 0 : Number(montoConBeca),
-        MesPagado: form.MesPagado,
-        FechaHora: form.FechaHora,
-        MetodoPago: form.MetodoPago,
-        Nota: notaFinal,
-        Notificado: !!form.Notificado,
-        Liquidado: !form.PagoNulo,
-        IDCurso: idCurso,
-        Beca: !!form.Beca,
-        CantidadBeca: Number(cantidadBeca),
-        PorcentajeBeca: parseInt(form.PorcentajeBeca, 10),
-      };
-      if (pagoEdit) {
-        // UPDATE
-        const { error } = await supabase
-          .from("PAGO")
-          .update(pago)
-          .eq("NumeroRecibo", pagoEdit.NumeroRecibo);
-        if (error) throw error;
-        toast.success("Pago actualizado correctamente");
-      } else {
-        // INSERT
-        await createPago(pago);
-        toast.success("Pago registrado correctamente");
-      }
-      if (onPagoGuardado) onPagoGuardado();
-      onCloseModal();
-    } catch (err) {
-      toast.error("Error al guardar el pago");
-      setError("Error al guardar el pago");
+
+    console.log("handleSubmit - Modo:", pagoEdit ? "EDITANDO" : "CREANDO");
+    console.log("handleSubmit - pagoEdit:", pagoEdit);
+
+    // Validaciones
+    if (form.MetodoPago === "Deposito" && !selectedBanco) {
+      setError(
+        "Debe seleccionar un banco cuando el método de pago es Depósito"
+      );
+      return;
+    }
+
+    if (
+      !form.PagoNulo &&
+      (Number(form.Monto) === 0 || form.Monto === "" || form.Monto === null)
+    ) {
+      setError(
+        "El monto no puede ser 0. Si es un pago nulo, marque la casilla 'Pago nulo'"
+      );
+      return;
+    }
+
+    if (form.PagoNulo && Number(form.Monto) !== 0) {
+      setError("Si marca 'Pago nulo', el monto debe ser 0");
+      return;
+    }
+
+    // Concatenar banco en Nota si es depósito
+    let notaFinal = form.Nota || "";
+    if (form.MetodoPago === "Deposito" && selectedBanco) {
+      const bancoNombre =
+        bancos.find((b) => String(b.IDBanco) === String(selectedBanco))
+          ?.NombreBanco || "";
+      notaFinal = bancoNombre + (notaFinal ? " " + notaFinal : "");
+    }
+
+    // Limpiar objeto pago para enviar solo los campos válidos y tipos correctos
+    const pago = {
+      NumeroRecibo: String(form.NumeroRecibo),
+      NumeroControl: String(form.NumeroControl),
+      Monto: form.PagoNulo ? 0 : Number(montoConBeca) || 0,
+      MesPagado: String(form.MesPagado),
+      FechaHora: String(form.FechaHora),
+      MetodoPago: String(form.MetodoPago),
+      Nota: String(notaFinal || ""),
+      Notificado: !!form.Notificado,
+      Liquidado: form.PagoNulo ? false : !!form.Liquidado,
+      Abono: form.PagoNulo ? false : !!form.Abono,
+      IDCurso: String(idCurso) || "",
+      Beca: !!form.Beca,
+      CantidadBeca: Number(cantidadBeca) || 0,
+      PorcentajeBeca: parseInt(form.PorcentajeBeca, 10) || 0,
+    };
+
+    // Validar que todos los campos requeridos estén presentes
+    console.log("Validando objeto pago antes de enviar:", pago);
+
+    if (
+      !pago.NumeroRecibo ||
+      !pago.NumeroControl ||
+      !pago.MesPagado ||
+      !pago.FechaHora
+    ) {
+      setError("Faltan campos requeridos en el formulario");
+      return;
+    }
+
+    if (pagoEdit) {
+      // UPDATE usando el hook
+      updatePayment(
+        { paymentData: pago, numeroRecibo: pagoEdit.NumeroRecibo },
+        {
+          onSuccess: () => {
+            console.log("Pago actualizado exitosamente");
+            if (onPagoGuardado) onPagoGuardado();
+            onCloseModal();
+          },
+          onError: (error) => {
+            console.error("Error en updatePayment:", error);
+            setError(error.message || "Error al actualizar el pago");
+          },
+        }
+      );
+    } else {
+      // INSERT usando el hook
+      console.log("Enviando pago para crear:", pago);
+      createPayment(pago, {
+        onSuccess: () => {
+          console.log("Pago creado exitosamente");
+          if (onPagoGuardado) onPagoGuardado();
+          onCloseModal();
+        },
+        onError: (error) => {
+          console.error("Error en createPayment:", error);
+          setError(error.message || "Error al registrar el pago");
+        },
+      });
     }
   }
 
@@ -267,22 +412,30 @@ function NewPaymentModal({
     setShowRecordatorioModal(false);
   }
 
-  if (loading) return <ModalContent>Cargando...</ModalContent>;
+  if (isLoadingBancos) return <ModalContent>Cargando...</ModalContent>;
 
   return (
     <ModalContent>
-      <Title>Registrar Pago</Title>
+      <Title>{pagoEdit ? "Editando Pago" : "Registrar Pago"}</Title>
       <form onSubmit={handleSubmit}>
         <Field>
           <Label>No. Recibo:</Label>
           <Value>{form.NumeroRecibo}</Value>
         </Field>
         <Field>
+          <Label>Alumno:</Label>
+          <Value>
+            {`${student.Nombre} ${student.ApellidoPaterno} ${
+              student.ApellidoMaterno || ""
+            }`.trim()}
+          </Value>
+        </Field>
+        <Field>
           <Label>No. Control:</Label>
           <Value>{form.NumeroControl}</Value>
         </Field>
         <Field>
-          <Label>Mes pagado:</Label>
+          <Label>Descripción:</Label>
           <Value>{form.MesPagado}</Value>
         </Field>
         <Field>
@@ -305,18 +458,34 @@ function NewPaymentModal({
           <Field>
             <Label>Banco:</Label>
             <Select
-              name="IDBanco"
-              value={form.IDBanco}
-              onChange={handleChange}
+              name="selectedBanco"
+              value={selectedBanco}
+              onChange={(e) => setSelectedBanco(e.target.value)}
               aria-label="Banco"
             >
               <option value="">Selecciona un banco</option>
-              {bancos.map((b) => (
-                <option key={b.IDBanco} value={b.IDBanco}>
-                  {b.NombreBanco}
-                </option>
-              ))}
+              {bancos
+                .sort((a, b) => a.NombreBanco.localeCompare(b.NombreBanco))
+                .map((b) => (
+                  <option key={b.IDBanco} value={b.IDBanco}>
+                    {b.NombreBanco}
+                  </option>
+                ))}
             </Select>
+            {!pagoEdit &&
+              lastPayment &&
+              lastPayment.MetodoPago === "Deposito" &&
+              selectedBanco && (
+                <div
+                  style={{
+                    fontSize: "1.2rem",
+                    color: "var(--color-green-700)",
+                    marginTop: "0.4rem",
+                  }}
+                >
+                  ✓ Banco precargado del último pago
+                </div>
+              )}
           </Field>
         )}
         <Field>
@@ -369,6 +538,16 @@ function NewPaymentModal({
           <Label htmlFor="Liquidado">Liquidado</Label>
         </Field>
         <Field>
+          <Checkbox
+            type="checkbox"
+            name="Abono"
+            checked={form.Abono}
+            onChange={handleChange}
+            aria-label="Abono"
+          />
+          <Label htmlFor="Abono">Abono</Label>
+        </Field>
+        <Field>
           <Label>Nota:</Label>
           <Input
             type="text"
@@ -379,18 +558,24 @@ function NewPaymentModal({
           />
         </Field>
         <Footer>
-          <Button type="button" variation="secondary" onClick={onCloseModal}>
+          <Button
+            type="button"
+            variation="secondary"
+            onClick={onCloseModal}
+            disabled={isWorking}
+          >
             Cancelar
           </Button>
           <Button
             type="button"
             variation="danger"
             onClick={handleOpenRecordatorio}
+            disabled={isWorking}
           >
             Enviar recordatorio
           </Button>
-          <Button type="submit" variation="primary">
-            Guardar
+          <Button type="submit" variation="primary" disabled={isWorking}>
+            {isWorking ? "Guardando..." : "Guardar"}
           </Button>
         </Footer>
         {error && <div style={{ color: "red" }}>{error}</div>}

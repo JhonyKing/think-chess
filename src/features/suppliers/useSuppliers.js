@@ -28,6 +28,8 @@ export function useCreateSupplier() {
     onSuccess: () => {
       toast.success("Proveedor creado exitosamente");
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      // Los proveedores están relacionados con gastos
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -45,6 +47,8 @@ export function useEditSupplier() {
     onSuccess: () => {
       toast.success("Proveedor actualizado exitosamente");
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      // Los proveedores están relacionados con gastos
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -61,6 +65,8 @@ export function useDeleteSupplier() {
     onSuccess: () => {
       toast.success("Proveedor eliminado exitosamente");
       queryClient.invalidateQueries({ queryKey: ["suppliers"] });
+      // Los proveedores están relacionados con gastos
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
     },
     onError: (err) => toast.error(err.message),
   });

@@ -7,7 +7,7 @@ import { useState, useEffect } from "react";
 import Input from "../../ui/Input";
 import Form from "../../ui/Form";
 import Button from "../../ui/Button";
-import { createEditStudent } from "../../services/apiStudents";
+import { createEditStudent, getStudents } from "../../services/apiStudents";
 import { getSchoolsList } from "../../services/apiSchools";
 import { getProfessors } from "../../services/apiProfessors";
 import FileInput from "../../ui/FileInput";
@@ -77,7 +77,25 @@ function CreateStudentForm({
   onCloseModal,
   numeroControlProp,
 }) {
-  const currentStudent = studentToEdit || {};
+  // Obtener datos frescos de todos los estudiantes cuando estamos editando
+  const {
+    data: allStudents = [],
+    isLoading: isLoadingStudents,
+    error: studentsError,
+  } = useQuery({
+    queryKey: ["students"],
+    queryFn: getStudents,
+    enabled: Boolean(studentToEdit?.NumeroControl), // Solo ejecutar si estamos editando
+  });
+
+  // Buscar el estudiante actualizado en los datos frescos
+  const freshStudent = allStudents.find(
+    (s) => s.NumeroControl === studentToEdit?.NumeroControl
+  );
+
+  // Usar datos frescos si están disponibles, sino usar los props como fallback
+  const currentStudent = freshStudent || studentToEdit || {};
+
   const {
     NumeroControl: editNumeroControl,
     URLImagen: existingImageUrl,
@@ -136,6 +154,19 @@ function CreateStudentForm({
     }
   }, [numeroControlProp, isEditSession, setValue]);
 
+  // Actualizar el formulario cuando lleguen datos frescos del estudiante
+  useEffect(() => {
+    if (isEditSession && freshStudent && !isLoadingStudents) {
+      reset({
+        NumeroControl: freshStudent.NumeroControl,
+        ...freshStudent,
+        NombreEscuela: freshStudent.NombreEscuela,
+        Tutor: freshStudent.Tutor,
+        PorcentajeBeca: freshStudent.PorcentajeBeca ?? 0,
+      });
+    }
+  }, [freshStudent, isEditSession, isLoadingStudents, reset]);
+
   useEffect(() => {
     if (!hasBeca) {
       setValue("PorcentajeBeca", 0);
@@ -167,6 +198,8 @@ function CreateStudentForm({
     onSuccess: () => {
       toast.success("Nuevo Alumno creado con éxito");
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      // Los estudiantes están relacionados con pagos
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
       reset();
       onCloseModal?.();
     },
@@ -180,6 +213,8 @@ function CreateStudentForm({
     onSuccess: () => {
       toast.success("Alumno actualizado con éxito");
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      // Los estudiantes están relacionados con pagos
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
       reset();
       onCloseModal?.();
     },
@@ -189,7 +224,11 @@ function CreateStudentForm({
   });
 
   const isWorking =
-    isCreating || isEditing || isLoadingSchools || isLoadingProfessors;
+    isCreating ||
+    isEditing ||
+    isLoadingSchools ||
+    isLoadingProfessors ||
+    isLoadingStudents;
 
   function onSubmit(data) {
     console.log("onSubmit called with data:", data);
@@ -250,6 +289,29 @@ function CreateStudentForm({
         })),
       ]
     : [{ value: "", label: "Cargando profesores..." }];
+
+  // Mostrar spinner si estamos cargando datos frescos del estudiante
+  if (isEditSession && isLoadingStudents) {
+    return (
+      <StyledForm>
+        <div style={{ textAlign: "center", padding: "2rem" }}>
+          <SpinnerMini />
+          <p>Cargando datos actualizados del estudiante...</p>
+        </div>
+      </StyledForm>
+    );
+  }
+
+  // Mostrar error si hay problema cargando los datos
+  if (isEditSession && studentsError) {
+    return (
+      <StyledForm>
+        <div style={{ textAlign: "center", padding: "2rem" }}>
+          <ErrorSpan>Error al cargar datos del estudiante</ErrorSpan>
+        </div>
+      </StyledForm>
+    );
+  }
 
   return (
     <StyledForm onSubmit={handleSubmit(onSubmit, onError)}>

@@ -28,6 +28,9 @@ export function useCreateBank() {
     onSuccess: () => {
       toast.success("Banco creado exitosamente");
       queryClient.invalidateQueries({ queryKey: ["banks"] });
+      queryClient.invalidateQueries({ queryKey: ["bancos"] });
+      // Los bancos están relacionados con pagos
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -44,6 +47,9 @@ export function useEditBank() {
     onSuccess: () => {
       toast.success("Banco actualizado exitosamente");
       queryClient.invalidateQueries({ queryKey: ["banks"] });
+      queryClient.invalidateQueries({ queryKey: ["bancos"] });
+      // Los bancos están relacionados con pagos
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -60,6 +66,9 @@ export function useDeleteBank() {
     onSuccess: () => {
       toast.success("Banco eliminado exitosamente");
       queryClient.invalidateQueries({ queryKey: ["banks"] });
+      queryClient.invalidateQueries({ queryKey: ["bancos"] });
+      // Los bancos están relacionados con pagos
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
     },
     onError: (err) => toast.error(err.message),
   });

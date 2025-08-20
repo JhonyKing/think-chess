@@ -90,6 +90,8 @@ function StudentsTable() {
     onSuccess: () => {
       toast.success(`Estudiante eliminado`);
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      // Los estudiantes están relacionados con pagos
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
       setStudentToDelete(null);
     },
     onError: (err) => toast.error(err.message),

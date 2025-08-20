@@ -296,6 +296,8 @@ function StudentRow({ student, onEdit, onKardexClick, onPrepareDelete }) {
     onSuccess: () => {
       toast.success(`Estudiante desactivado`);
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      // Los estudiantes están relacionados con pagos
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
     },
     onError: (err) => toast.error(err.message),
   });
@@ -305,6 +307,8 @@ function StudentRow({ student, onEdit, onKardexClick, onPrepareDelete }) {
     onSuccess: () => {
       toast.success(`Estudiante reactivado`);
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      // Los estudiantes están relacionados con pagos
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
     },
     onError: (err) => toast.error(err.message),
   });

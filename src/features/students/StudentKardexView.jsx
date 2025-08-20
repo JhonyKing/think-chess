@@ -1,6 +1,8 @@
 import styled from "styled-components";
 import { formatInTimeZone } from "date-fns-tz";
 import { es } from "date-fns/locale";
+import { useQuery } from "@tanstack/react-query";
+import { getStudents } from "../../services/apiStudents";
 
 const KardexLayout = styled.div`
   padding: 2rem;
@@ -81,14 +83,41 @@ const formatBoolean = (value) => (value ? "Sí" : "No");
  * @param {object} props.student - The student object containing data to display.
  */
 function StudentKardexView({ student /*, onCloseModal */ }) {
+  // Obtener datos frescos del estudiante desde la base de datos
+  const {
+    data: allStudents = [],
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ["students"],
+    queryFn: getStudents,
+  });
+
   if (!student) {
     console.error("StudentKardexView rendered without a student prop.");
     return <p>Error: No se encontró información del estudiante.</p>;
   }
 
-  const fullName = `${student.Nombre || ""} ${student.ApellidoPaterno || ""} ${
-    student.ApellidoMaterno || ""
-  }`.trim();
+  if (isLoading) {
+    return <p>Cargando información del estudiante...</p>;
+  }
+
+  if (error) {
+    console.error("Error loading student data:", error);
+    return <p>Error al cargar información del estudiante.</p>;
+  }
+
+  // Buscar el estudiante actualizado en los datos frescos
+  const freshStudent = allStudents.find(
+    (s) => s.NumeroControl === student.NumeroControl
+  );
+
+  // Usar datos frescos si están disponibles, sino usar los props como fallback
+  const currentStudent = freshStudent || student;
+
+  const fullName = `${currentStudent.Nombre || ""} ${
+    currentStudent.ApellidoPaterno || ""
+  } ${currentStudent.ApellidoMaterno || ""}`.trim();
 
   return (
     <>
@@ -96,7 +125,7 @@ function StudentKardexView({ student /*, onCloseModal */ }) {
       <KardexLayout>
         <div>
           <StudentImage
-            src={student.URLImagen || "default-user.jpg"}
+            src={currentStudent.URLImagen || "default-user.jpg"}
             alt={`Foto de ${fullName}`}
             onError={(e) => (e.target.src = "default-user.jpg")}
           />
@@ -104,7 +133,7 @@ function StudentKardexView({ student /*, onCloseModal */ }) {
         <DataGrid>
           <DataItem>
             <Label>Número de Control</Label>
-            <Value>{student.NumeroControl || "N/A"}</Value>
+            <Value>{currentStudent.NumeroControl || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Nombre Completo</Label>
@@ -112,82 +141,82 @@ function StudentKardexView({ student /*, onCloseModal */ }) {
           </DataItem>
           <DataItem>
             <Label>Grado</Label>
-            <Value>{student.Grado || "N/A"}</Value>
+            <Value>{currentStudent.Grado || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Grupo</Label>
-            <Value>{student.Grupo || "N/A"}</Value>
+            <Value>{currentStudent.Grupo || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Fecha de Nacimiento</Label>
-            <Value>{formatDate(student.FechaNacimiento)}</Value>
+            <Value>{formatDate(currentStudent.FechaNacimiento)}</Value>
           </DataItem>
           <DataItem>
             <Label>Nombre Papá/Mamá (Tutor)</Label>
-            <Value>{student.Tutor || "N/A"}</Value>
+            <Value>{currentStudent.Tutor || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Correo Electrónico</Label>
-            <Value>{student.Correo || "N/A"}</Value>
+            <Value>{currentStudent.Correo || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Teléfono/Celular</Label>
-            <Value>{student.Telefono || "N/A"}</Value>
+            <Value>{currentStudent.Telefono || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Escuela</Label>
-            <Value>{student.NombreEscuela || "N/A"}</Value>
+            <Value>{currentStudent.NombreEscuela || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Persona Autorizada 1</Label>
-            <Value>{student.QuienRecoge1 || "N/A"}</Value>
+            <Value>{currentStudent.QuienRecoge1 || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Persona Autorizada 2</Label>
-            <Value>{student.QuienRecoge2 || "N/A"}</Value>
+            <Value>{currentStudent.QuienRecoge2 || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Profesor</Label>
-            <Value>{student.Profesor || "N/A"}</Value>
+            <Value>{currentStudent.Profesor || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Rango</Label>
-            <Value>{student.Rango || "N/A"}</Value>
+            <Value>{currentStudent.Rango || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Activo</Label>
-            <Value>{formatBoolean(student.Activo)}</Value>
+            <Value>{formatBoolean(currentStudent.Activo)}</Value>
           </DataItem>
           <DataItem>
             <Label>Beca</Label>
-            <Value>{formatBoolean(student.Beca)}</Value>
+            <Value>{formatBoolean(currentStudent.Beca)}</Value>
           </DataItem>
-          {student.Beca && (
+          {currentStudent.Beca && (
             <DataItem>
               <Label>Porcentaje Beca</Label>
               <Value>
-                {student.PorcentajeBeca !== null &&
-                student.PorcentajeBeca !== undefined
-                  ? `${student.PorcentajeBeca}%`
+                {currentStudent.PorcentajeBeca !== null &&
+                currentStudent.PorcentajeBeca !== undefined
+                  ? `${currentStudent.PorcentajeBeca}%`
                   : "N/A"}
               </Value>
             </DataItem>
           )}
           <DataItem>
             <Label>Fecha de Inscripción</Label>
-            <Value>{formatDate(student.FechaInscripcion)}</Value>
+            <Value>{formatDate(currentStudent.FechaInscripcion)}</Value>
           </DataItem>
           <DataItem>
             <Label>Fecha de Baja</Label>
-            <Value>{formatDate(student.FechaBaja)}</Value>
+            <Value>{formatDate(currentStudent.FechaBaja)}</Value>
           </DataItem>
           <DataItem>
             <Label>Nick</Label>
-            <Value>{student.Nick || "N/A"}</Value>
+            <Value>{currentStudent.Nick || "N/A"}</Value>
           </DataItem>
           <DataItem>
             <Label>Password</Label>
-            <Value>{student.Password || "N/A"}</Value>
+            <Value>{currentStudent.Password || "N/A"}</Value>
           </DataItem>
         </DataGrid>
       </KardexLayout>

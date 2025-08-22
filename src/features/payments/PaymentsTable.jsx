@@ -148,6 +148,10 @@ function PaymentsTable({ course, schoolId }) {
   const [sortBy, setSortBy] = useState("deuda");
   const [sortDirection, setSortDirection] = useState("desc");
 
+  // Estado para ordenamiento por meses
+  const [monthSort, setMonthSort] = useState({});
+  // monthSort estructura: { "Sep": "PA", "Oct": "NP", "Nov": "AB", etc. }
+
   // Estado para modales de acciones
   const [studentToEdit, setStudentToEdit] = useState(null);
   const [studentToDelete, setStudentToDelete] = useState(null);
@@ -859,11 +863,89 @@ function PaymentsTable({ course, schoolId }) {
   // Ordenamiento
   const sortedStudents = useMemo(() => {
     let arr = [...studentsWithDeuda];
-    if (sortBy === "deuda") {
+
+    // Verificar si hay ordenamiento por mes activo
+    const activeMonthSort = Object.entries(monthSort).find(
+      ([, sortType]) => sortType
+    );
+
+    if (activeMonthSort) {
+      const [sortMonth, sortType] = activeMonthSort;
+      arr.sort((a, b) => {
+        // Determinar estado de cada pago considerando abonos múltiples
+        const getPaymentStatus = (student, month) => {
+          const payment = findPayment(student.NumeroControl, month);
+          if (!payment) return "NP";
+          if (payment.Monto === 0) return "NA";
+
+          // Buscar TODOS los pagos del mes para este estudiante (con y sin abono)
+          const allPaymentsForMonth = payments.filter(
+            (p) =>
+              p.NumeroControl === student.NumeroControl &&
+              p.MesPagado === month &&
+              p.IDCurso === course?.IDCurso
+          );
+
+          // Si hay múltiples pagos, es definitivamente un abono múltiple
+          if (allPaymentsForMonth.length > 1) {
+            // Verificar si alguno está liquidado
+            const hasLiquidated = allPaymentsForMonth.some((p) => p.Liquidado);
+            return hasLiquidated ? "AB_LIQUIDADO" : "AB_PENDIENTE";
+          }
+
+          // Si hay un solo pago
+          if (payment.Liquidado) {
+            // Si está liquidado PERO tiene el campo Abono = true, es un abono liquidado
+            if (payment.Abono) {
+              return "AB_LIQUIDADO";
+            }
+            return "PA"; // Pago normal liquidado
+          }
+
+          // Si no está liquidado, verificar si es abono
+          if (payment.Abono) {
+            return "AB_PENDIENTE";
+          }
+
+          return "NP"; // No pagado normal
+        };
+
+        const statusA = getPaymentStatus(a, sortMonth);
+        const statusB = getPaymentStatus(b, sortMonth);
+
+        // Lógica especial para abonos (AB)
+        if (sortType === "AB") {
+          // Determinar si cada estado es un abono
+          const isAbonoA =
+            statusA === "AB_PENDIENTE" || statusA === "AB_LIQUIDADO";
+          const isAbonoB =
+            statusB === "AB_PENDIENTE" || statusB === "AB_LIQUIDADO";
+
+          // Primero: cualquier abono vs no-abono
+          if (isAbonoA && !isAbonoB) return -1;
+          if (isAbonoB && !isAbonoA) return 1;
+
+          // Si ambos son abonos, priorizar pendientes sobre liquidados
+          if (isAbonoA && isAbonoB) {
+            if (statusA === "AB_PENDIENTE" && statusB === "AB_LIQUIDADO")
+              return -1;
+            if (statusB === "AB_PENDIENTE" && statusA === "AB_LIQUIDADO")
+              return 1;
+          }
+        } else {
+          // Para otros estados (PA, NP, NA), comportamiento normal
+          if (statusA === sortType && statusB !== sortType) return -1;
+          if (statusB === sortType && statusA !== sortType) return 1;
+        }
+
+        // Si ambos tienen el mismo estado, sub-ordenar por apellido paterno ascendente
+        return a.ApellidoPaterno.localeCompare(b.ApellidoPaterno);
+      });
+    } else if (sortBy === "deuda") {
       arr.sort((a, b) =>
         sortDirection === "desc" ? b.deuda - a.deuda : a.deuda - b.deuda
       );
-    } else {
+    } else if (sortBy) {
       arr.sort((a, b) => {
         let valA = a[sortBy] || "";
         let valB = b[sortBy] || "";
@@ -875,7 +957,34 @@ function PaymentsTable({ course, schoolId }) {
       });
     }
     return arr;
-  }, [studentsWithDeuda, sortBy, sortDirection]);
+  }, [
+    studentsWithDeuda,
+    sortBy,
+    sortDirection,
+    monthSort,
+    findPayment,
+    payments,
+    course?.IDCurso,
+  ]);
+
+  // Función para manejar el ordenamiento por meses
+  function handleMonthSort(month) {
+    const currentSort = monthSort[month];
+    const sortOrder = ["PA", "NP", "AB", "NA"];
+    const currentIndex = sortOrder.indexOf(currentSort);
+    const nextIndex =
+      currentIndex === -1 ? 0 : (currentIndex + 1) % sortOrder.length;
+    const nextSort = sortOrder[nextIndex];
+
+    // CRÍTICO: Solo un mes puede estar activo a la vez
+    setMonthSort({
+      [month]: nextSort, // Solo este mes, limpiar todos los demás
+    });
+
+    // Limpiar otros ordenamientos
+    setSortBy("");
+    setSortDirection("");
+  }
 
   // Refrescar datos usando React Query
   function fetchPaymentsRefrescar() {
@@ -948,21 +1057,47 @@ function PaymentsTable({ course, schoolId }) {
     return <div>No hay alumnos activos para este curso.</div>;
 
   // Encabezados de columnas y claves de ordenamiento
-  const columns = [
+  const baseColumns = [
+    { label: "Ac.", key: "acciones", sortable: false },
     { label: "No. Lista", key: "lista" },
     { label: "No. Control", key: "NumeroControl" },
     { label: "Apellido Paterno", key: "ApellidoPaterno" },
     { label: "Apellido Materno", key: "ApellidoMaterno" },
     { label: "Nombre", key: "Nombre" },
     { label: "Deuda", key: "deuda" },
+    {
+      label: "Inscripción",
+      key: "Inscripcion",
+      sortable: true,
+      isInscription: true,
+    },
   ];
 
-  function handleSort(key) {
-    if (sortBy === key) {
-      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+  // Agregar columnas de meses
+  const monthColumns = months.map((month) => ({
+    label: month.slice(0, 3), // Solo las primeras 3 letras
+    key: month,
+    sortable: true,
+    isMonth: true,
+  }));
+
+  const columns = [...baseColumns, ...monthColumns];
+
+  function handleSort(key, isMonth = false, isInscription = false) {
+    if (isMonth) {
+      handleMonthSort(key);
+    } else if (isInscription) {
+      handleMonthSort("Inscripcion"); // Usar la misma lógica que meses
     } else {
-      setSortBy(key);
-      setSortDirection("asc");
+      // Limpiar ordenamiento por meses cuando se ordena por otra columna
+      setMonthSort({});
+
+      if (sortBy === key) {
+        setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+      } else {
+        setSortBy(key);
+        setSortDirection("asc");
+      }
     }
   }
 
@@ -1182,61 +1317,44 @@ function PaymentsTable({ course, schoolId }) {
               {columns.map((col) => (
                 <Th
                   key={col.key}
-                  onClick={() => handleSort(col.key)}
-                  aria-label={`Ordenar por ${col.label}`}
+                  onClick={
+                    col.sortable !== false
+                      ? () =>
+                          handleSort(col.key, col.isMonth, col.isInscription)
+                      : undefined
+                  }
+                  style={{
+                    cursor: col.sortable !== false ? "pointer" : "default",
+                    backgroundColor:
+                      (col.isMonth && monthSort[col.key]) ||
+                      (col.isInscription && monthSort["Inscripcion"])
+                        ? "#e3f2fd"
+                        : undefined,
+                  }}
+                  aria-label={
+                    col.sortable !== false
+                      ? `Ordenar por ${col.label}`
+                      : col.label
+                  }
                 >
                   {col.label}
-                  {sortBy === col.key
+                  {col.isMonth && monthSort[col.key]
+                    ? ` (${monthSort[col.key]})`
+                    : col.isInscription && monthSort["Inscripcion"]
+                    ? ` (${monthSort["Inscripcion"]})`
+                    : sortBy === col.key
                     ? sortDirection === "asc"
                       ? " ▲"
                       : " ▼"
                     : null}
                 </Th>
               ))}
-              <Th>Inscripción</Th>
-              {months.map((m) => (
-                <Th key={m}>{m.slice(0, 3)}</Th>
-              ))}
-              <Th>Acciones</Th>
             </tr>
           </thead>
           <tbody>
             {sortedStudents.map((student, idx) => (
               <tr key={student.NumeroControl}>
-                <Td>{idx + 1}</Td>
-                <Td>{student.NumeroControl}</Td>
-                <Td>{student.ApellidoPaterno}</Td>
-                <Td>{student.ApellidoMaterno}</Td>
-                <Td>{student.Nombre}</Td>
-                <Td>{student.deuda}</Td>
-                <Td>
-                  <PaymentStatusButton
-                    payment={findPayment(student.NumeroControl, "Inscripcion")}
-                    numeroControl={student.NumeroControl}
-                    mesPagado="Inscripcion"
-                    idCurso={course.IDCurso}
-                    onShowReceipt={handleShowReceipt}
-                    onShowAbono={handleShowAbono}
-                    onShowNoAplica={handleShowNoAplica}
-                    onShowNuevoPago={() =>
-                      handleShowNuevoPago(student, "Inscripcion")
-                    }
-                  />
-                </Td>
-                {months.map((m) => (
-                  <Td key={m}>
-                    <PaymentStatusButton
-                      payment={findPayment(student.NumeroControl, m)}
-                      numeroControl={student.NumeroControl}
-                      mesPagado={m}
-                      idCurso={course.IDCurso}
-                      onShowReceipt={handleShowReceipt}
-                      onShowAbono={handleShowAbono}
-                      onShowNoAplica={handleShowNoAplica}
-                      onShowNuevoPago={() => handleShowNuevoPago(student, m)}
-                    />
-                  </Td>
-                ))}
+                {/* Columna de Acciones - PRIMERA */}
                 <Td>
                   <Menus>
                     <Menus.Menu>
@@ -1264,6 +1382,43 @@ function PaymentsTable({ course, schoolId }) {
                     </Menus.Menu>
                   </Menus>
                 </Td>
+                {/* Columnas base */}
+                <Td>{idx + 1}</Td>
+                <Td>{student.NumeroControl}</Td>
+                <Td>{student.ApellidoPaterno}</Td>
+                <Td>{student.ApellidoMaterno}</Td>
+                <Td>{student.Nombre}</Td>
+                <Td>{student.deuda}</Td>
+                {/* Columna de Inscripción */}
+                <Td>
+                  <PaymentStatusButton
+                    payment={findPayment(student.NumeroControl, "Inscripcion")}
+                    numeroControl={student.NumeroControl}
+                    mesPagado="Inscripcion"
+                    idCurso={course.IDCurso}
+                    onShowReceipt={handleShowReceipt}
+                    onShowAbono={handleShowAbono}
+                    onShowNoAplica={handleShowNoAplica}
+                    onShowNuevoPago={() =>
+                      handleShowNuevoPago(student, "Inscripcion")
+                    }
+                  />
+                </Td>
+                {/* Columnas de meses */}
+                {months.map((m) => (
+                  <Td key={m}>
+                    <PaymentStatusButton
+                      payment={findPayment(student.NumeroControl, m)}
+                      numeroControl={student.NumeroControl}
+                      mesPagado={m}
+                      idCurso={course.IDCurso}
+                      onShowReceipt={handleShowReceipt}
+                      onShowAbono={handleShowAbono}
+                      onShowNoAplica={handleShowNoAplica}
+                      onShowNuevoPago={() => handleShowNuevoPago(student, m)}
+                    />
+                  </Td>
+                ))}
               </tr>
             ))}
           </tbody>

@@ -19,8 +19,8 @@ function BankTable() {
     <Menus>
       <Table columns="1fr 0.1fr">
         <Table.Header>
+          <div>Ac.</div>
           <div>Nombre Banco</div>
-          <div>Acciones</div>
         </Table.Header>
 
         <Table.Body

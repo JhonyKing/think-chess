@@ -90,17 +90,7 @@ function ExpenseRow({ expense, onEdit }) {
 
   return (
     <Table.Row>
-      <Fecha title={formattedDate}>{formattedDate}</Fecha>
-      <RazonTag>
-        <Tag type={razonToTagType[Razon] || "default"}>{Razon || "N/A"}</Tag>
-      </RazonTag>
-      <Proveedor title={nombreProveedor}>{nombreProveedor}</Proveedor>
-      <Escuela title={NombreEscuela}>{NombreEscuela || "N/A"}</Escuela>
-      <Grupo title={grupoValue}>{grupoValue || "N/A"}</Grupo>
-      <Monto>{formatCurrency(montoValue || 0)}</Monto>
-      <Nota title={notaValue}>{notaValue || "N/A"}</Nota>
-
-      {/* Actions */}
+      {/* Actions - PRIMERA COLUMNA */}
       <ActionsCell>
         <Menus>
           <Modal>
@@ -139,6 +129,15 @@ function ExpenseRow({ expense, onEdit }) {
           </Modal>
         </Menus>
       </ActionsCell>
+      <Fecha title={formattedDate}>{formattedDate}</Fecha>
+      <RazonTag>
+        <Tag type={razonToTagType[Razon] || "default"}>{Razon || "N/A"}</Tag>
+      </RazonTag>
+      <Proveedor title={nombreProveedor}>{nombreProveedor}</Proveedor>
+      <Escuela title={NombreEscuela}>{NombreEscuela || "N/A"}</Escuela>
+      <Grupo title={grupoValue}>{grupoValue || "N/A"}</Grupo>
+      <Monto>{formatCurrency(montoValue || 0)}</Monto>
+      <Nota title={notaValue}>{notaValue || "N/A"}</Nota>
     </Table.Row>
   );
 }

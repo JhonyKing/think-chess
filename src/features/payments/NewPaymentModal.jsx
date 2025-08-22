@@ -11,6 +11,7 @@ import {
   useLastPaymentByStudent,
   usePaymentsByStudentAndMonth,
 } from "./usePayments";
+import { useSchools } from "../schools/useSchools";
 import { toast } from "react-hot-toast";
 
 const ModalContent = styled.div`
@@ -79,6 +80,7 @@ function NewPaymentModal({
   const { createPayment, isCreating } = useCreatePayment();
   const { updatePayment, isUpdating } = useUpdatePayment();
   const { lastPayment } = useLastPaymentByStudent(student.NumeroControl);
+  const { schools = [], isLoading: isLoadingSchools } = useSchools();
 
   // Generar número de recibo SOLO para nuevos pagos, NO para edición
   const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
@@ -114,12 +116,42 @@ function NewPaymentModal({
   const [error, setError] = useState("");
   const [showRecordatorioModal, setShowRecordatorioModal] = useState(false);
   const [correoEditado, setCorreoEditado] = useState("");
+  const [selectedAmountType, setSelectedAmountType] = useState("");
+  const [showBankPreloadMessage, setShowBankPreloadMessage] = useState(false);
+  const [lastPaymentBankId, setLastPaymentBankId] = useState(null);
 
   const isWorking =
     isCreating ||
     isUpdating ||
     isLoadingBancos ||
+    isLoadingSchools ||
     (!pagoEdit && isGeneratingRecibo);
+
+  // Encontrar la escuela del estudiante
+  const studentSchool = schools.find(
+    (school) => school.NombreEscuela === student.NombreEscuela
+  );
+
+  // Opciones para el selector de monto
+  const amountOptions = [
+    {
+      value: "mensualidad",
+      label: `Mensualidad: $${studentSchool?.MensualidadPorAlumno || 0}`,
+      amount: studentSchool?.MensualidadPorAlumno || 0,
+    },
+    {
+      value: "mensualidad_recargo",
+      label: `Mensualidad con recargo: $${
+        studentSchool?.MensualidadConRecargo || 0
+      }`,
+      amount: studentSchool?.MensualidadConRecargo || 0,
+    },
+    {
+      value: "abono",
+      label: "Abono",
+      amount: 0,
+    },
+  ];
 
   // Inicializar formulario con datos de edición si existe
   useEffect(() => {
@@ -185,6 +217,8 @@ function NewPaymentModal({
       );
       if (bancoMatch) {
         setSelectedBanco(String(bancoMatch.IDBanco));
+        setLastPaymentBankId(String(bancoMatch.IDBanco)); // Guardar el ID del banco del último pago
+        setShowBankPreloadMessage(true); // Mostrar leyenda cuando se precarga
       }
     }
   }, [lastPayment, pagoEdit, bancos]);
@@ -252,6 +286,16 @@ function NewPaymentModal({
     }
   }, [form.Monto, form.Beca, form.PorcentajeBeca, form.PagoNulo]);
 
+  // Resetear selectedAmountType cuando se activa Pago nulo
+  useEffect(() => {
+    if (form.PagoNulo) {
+      setSelectedAmountType("");
+      setSelectedBanco("");
+      setShowBankPreloadMessage(false); // Ocultar leyenda cuando se activa Pago nulo
+      setLastPaymentBankId(null); // Resetear el banco del último pago
+    }
+  }, [form.PagoNulo]);
+
   // Formatear fecha humana
   let fechaHumana = "-";
   if (form.FechaHora) {
@@ -269,8 +313,16 @@ function NewPaymentModal({
     setForm((f) => ({
       ...f,
       [name]: type === "checkbox" ? checked : value,
-      // Si marca "Pago nulo", poner monto a 0
-      ...(name === "PagoNulo" && checked ? { Monto: 0 } : {}),
+      // Si marca "Pago nulo", resetear y activar Liquidado
+      ...(name === "PagoNulo" && checked
+        ? {
+            Monto: 0,
+            Liquidado: true,
+            Abono: false,
+            MetodoPago: "Efectivo",
+            Nota: "",
+          }
+        : {}),
       // Si desmarca "Pago nulo" y el monto es 0, limpiarlo para que ingrese un monto válido
       ...(name === "PagoNulo" && !checked && f.Monto === 0
         ? { Monto: "" }
@@ -281,6 +333,45 @@ function NewPaymentModal({
       // Si marca "Liquidado", automáticamente desmarcar "Abono" como false (a menos que ya existan abonos previos)
       ...(name === "Liquidado" && checked ? { Abono: false } : {}),
     }));
+  }
+
+  // Función para manejar el cambio del selector de monto
+  function handleAmountTypeChange(e) {
+    const selectedValue = e.target.value;
+    setSelectedAmountType(selectedValue);
+
+    if (selectedValue) {
+      const selectedOption = amountOptions.find(
+        (option) => option.value === selectedValue
+      );
+      if (selectedOption) {
+        setForm((prevForm) => ({
+          ...prevForm,
+          Monto: selectedOption.amount,
+        }));
+
+        // Lógica específica según el tipo seleccionado
+        if (selectedValue === "abono") {
+          // Si selecciona "abono", activar Abono y desactivar Liquidado
+          setForm((prevForm) => ({
+            ...prevForm,
+            Monto: 0,
+            Abono: true,
+            Liquidado: false,
+          }));
+        } else if (
+          selectedValue === "mensualidad" ||
+          selectedValue === "mensualidad_recargo"
+        ) {
+          // Si selecciona Mensualidad o Mensualidad con recargo, activar Liquidado y desactivar Abono
+          setForm((prevForm) => ({
+            ...prevForm,
+            Liquidado: true,
+            Abono: false,
+          }));
+        }
+      }
+    }
   }
 
   function handleSubmit(e) {
@@ -443,11 +534,22 @@ function NewPaymentModal({
           <Value>{fechaHumana}</Value>
         </Field>
         <Field>
+          <Checkbox
+            type="checkbox"
+            name="PagoNulo"
+            checked={form.PagoNulo}
+            onChange={handleChange}
+            aria-label="Pago nulo"
+          />
+          <Label htmlFor="PagoNulo">Pago nulo</Label>
+        </Field>
+        <Field>
           <Label>Método de pago:</Label>
           <Select
             name="MetodoPago"
             value={form.MetodoPago}
             onChange={handleChange}
+            disabled={form.PagoNulo}
             aria-label="Método de pago"
           >
             <option value="Efectivo">Efectivo</option>
@@ -460,7 +562,11 @@ function NewPaymentModal({
             <Select
               name="selectedBanco"
               value={selectedBanco}
-              onChange={(e) => setSelectedBanco(e.target.value)}
+              onChange={(e) => {
+                setSelectedBanco(e.target.value);
+                setShowBankPreloadMessage(false); // Ocultar leyenda cuando el usuario selecciona manualmente
+              }}
+              disabled={form.PagoNulo}
               aria-label="Banco"
             >
               <option value="">Selecciona un banco</option>
@@ -472,10 +578,9 @@ function NewPaymentModal({
                   </option>
                 ))}
             </Select>
-            {!pagoEdit &&
-              lastPayment &&
-              lastPayment.MetodoPago === "Deposito" &&
-              selectedBanco && (
+            {showBankPreloadMessage &&
+              selectedBanco &&
+              selectedBanco === lastPaymentBankId && (
                 <div
                   style={{
                     fontSize: "1.2rem",
@@ -488,6 +593,22 @@ function NewPaymentModal({
               )}
           </Field>
         )}
+        <Field>
+          <Label>Tipo de Monto:</Label>
+          <Select
+            value={selectedAmountType}
+            onChange={handleAmountTypeChange}
+            disabled={form.PagoNulo}
+            aria-label="Seleccionar tipo de monto"
+          >
+            <option value="">Seleccione una opción</option>
+            {amountOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
         <Field>
           <Label>Monto:</Label>
           <Input
@@ -517,16 +638,7 @@ function NewPaymentModal({
             </Field>
           </>
         )}
-        <Field>
-          <Checkbox
-            type="checkbox"
-            name="PagoNulo"
-            checked={form.PagoNulo}
-            onChange={handleChange}
-            aria-label="Pago nulo"
-          />
-          <Label htmlFor="PagoNulo">Pago nulo</Label>
-        </Field>
+
         <Field>
           <Checkbox
             type="checkbox"

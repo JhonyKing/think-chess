@@ -185,6 +185,7 @@ function UsersTable() {
       <TableContainer>
         <Table columns={columnWidths}>
           <Table.Header>
+            <div style={{ textAlign: "center" }}>Ac.</div>
             {/* Make headers sortable */}
             <div>
               <SortButton onClick={() => handleSort("Nombre")}>
@@ -252,8 +253,6 @@ function UsersTable() {
                 Configuración {renderSortIcon("Configuracion")}
               </SortButton>
             </div>
-            <div style={{ textAlign: "center" }}>Acciones</div>{" "}
-            {/* Actions not sortable */}
           </Table.Header>
 
           <Table.Body

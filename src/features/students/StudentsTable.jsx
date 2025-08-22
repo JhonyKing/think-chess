@@ -262,6 +262,7 @@ function StudentsTable() {
       <TableContainer>
         <Table columns={columnWidths} role="table">
           <Table.Header role="row">
+            <div style={{ textAlign: "center" }}>Ac.</div>
             <div style={{ textAlign: "center" }}>
               <SortButton onClick={() => handleSort("NumeroControl")}>
                 # Control {renderSortIcon("NumeroControl")}
@@ -372,7 +373,6 @@ function StudentsTable() {
                 Password {renderSortIcon("Password")}
               </SortButton>
             </div>
-            <div style={{ textAlign: "center" }}>Acciones</div>
           </Table.Header>
 
           <Table.Body

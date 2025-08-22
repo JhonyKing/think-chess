@@ -106,20 +106,6 @@ function UserRow({ user, onEdit }) {
 
   return (
     <Table.Row>
-      <Name title={Nombre}>{Nombre}</Name>
-      <Type title={TipoDeUsuario}>{TipoDeUsuario}</Type>
-      <BooleanCell>{renderBooleanIcon(Inicio)}</BooleanCell>
-      <BooleanCell>{renderBooleanIcon(Asistencias)}</BooleanCell>
-      <BooleanCell>{renderBooleanIcon(Gastos)}</BooleanCell>
-      <BooleanCell>{renderBooleanIcon(Registro)}</BooleanCell>
-      <BooleanCell>{renderBooleanIcon(Reportes)}</BooleanCell>
-      <BooleanCell>{renderBooleanIcon(Escuelas)}</BooleanCell>
-      <BooleanCell>{renderBooleanIcon(Estadisticas)}</BooleanCell>
-      <BooleanCell>{renderBooleanIcon(Alumnos)}</BooleanCell>
-      <BooleanCell>{renderBooleanIcon(Proveedores)}</BooleanCell>
-      <BooleanCell>{renderBooleanIcon(Usuarios)}</BooleanCell>
-      <ConfiguracionCell>{renderBooleanIcon(Configuracion)}</ConfiguracionCell>
-
       <ActionsCell>
         <Menus>
           <Modal>
@@ -162,6 +148,19 @@ function UserRow({ user, onEdit }) {
           </Modal>
         </Menus>
       </ActionsCell>
+      <Name title={Nombre}>{Nombre}</Name>
+      <Type title={TipoDeUsuario}>{TipoDeUsuario}</Type>
+      <BooleanCell>{renderBooleanIcon(Inicio)}</BooleanCell>
+      <BooleanCell>{renderBooleanIcon(Asistencias)}</BooleanCell>
+      <BooleanCell>{renderBooleanIcon(Gastos)}</BooleanCell>
+      <BooleanCell>{renderBooleanIcon(Registro)}</BooleanCell>
+      <BooleanCell>{renderBooleanIcon(Reportes)}</BooleanCell>
+      <BooleanCell>{renderBooleanIcon(Escuelas)}</BooleanCell>
+      <BooleanCell>{renderBooleanIcon(Estadisticas)}</BooleanCell>
+      <BooleanCell>{renderBooleanIcon(Alumnos)}</BooleanCell>
+      <BooleanCell>{renderBooleanIcon(Proveedores)}</BooleanCell>
+      <BooleanCell>{renderBooleanIcon(Usuarios)}</BooleanCell>
+      <ConfiguracionCell>{renderBooleanIcon(Configuracion)}</ConfiguracionCell>
     </Table.Row>
   );
 }

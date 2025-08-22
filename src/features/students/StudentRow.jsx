@@ -387,45 +387,6 @@ function StudentRow({ student, onEdit, onKardexClick, onPrepareDelete }) {
 
   return (
     <TableRow role="row" $isDeactivated={isDeactivated}>
-      <NoControlStyled>{displayValue(NumeroControl)}</NoControlStyled>
-      <NombreStyled>{displayValue(Nombre)}</NombreStyled>
-      <ApellidoPaternoStyled>
-        {displayValue(ApellidoPaterno)}
-      </ApellidoPaternoStyled>
-      <ApellidoMaternoStyled>
-        {displayValue(ApellidoMaterno)}
-      </ApellidoMaternoStyled>
-      <NombreEscuelaStyled title={NombreEscuela}>
-        {displayValue(NombreEscuela)}
-      </NombreEscuelaStyled>
-      <QuienRecogeStyled title={QuienRecoge1}>
-        {displayValue(QuienRecoge1)}
-      </QuienRecogeStyled>
-      <QuienRecogeStyled title={QuienRecoge2}>
-        {displayValue(QuienRecoge2)}
-      </QuienRecogeStyled>
-      <FechaNacimientoStyled>
-        {formatDate(FechaNacimiento)}
-      </FechaNacimientoStyled>
-      <TelefonoStyled>{displayValue(Telefono)}</TelefonoStyled>
-      <CorreoStyled title={Correo}>{displayValue(Correo)}</CorreoStyled>
-      <ActivoStyled>{displayBoolean(Activo)}</ActivoStyled>
-      <TutorStyled title={Tutor}>{displayValue(Tutor)}</TutorStyled>
-      <GradoStyled>{displayValue(Grado)}</GradoStyled>
-      <GrupoStyled>{displayValue(Grupo)}</GrupoStyled>
-      <BecaStyled>{displayBoolean(Beca)}</BecaStyled>
-      <PorcentajeBecaStyled>
-        {Beca ? displayPercentage(PorcentajeBeca) : "-"}
-      </PorcentajeBecaStyled>
-      <ProfesorStyled>{displayValue(Profesor)}</ProfesorStyled>
-      <RangoStyled>{displayValue(Rango)}</RangoStyled>
-      <FechaInscripcionStyled>
-        {formatDate(FechaInscripcion)}
-      </FechaInscripcionStyled>
-      <FechaBajaStyled>{formatDate(FechaBaja)}</FechaBajaStyled>
-      <NickStyled>{displayValue(Nick)}</NickStyled>
-      <PasswordStyled>{displayValue(Password)}</PasswordStyled>
-
       <Actions>
         <Menus>
           <Menus.Menu>
@@ -481,6 +442,44 @@ function StudentRow({ student, onEdit, onKardexClick, onPrepareDelete }) {
         </Menus>
         {isProcessing && <SpinnerMini />}
       </Actions>
+      <NoControlStyled>{displayValue(NumeroControl)}</NoControlStyled>
+      <NombreStyled>{displayValue(Nombre)}</NombreStyled>
+      <ApellidoPaternoStyled>
+        {displayValue(ApellidoPaterno)}
+      </ApellidoPaternoStyled>
+      <ApellidoMaternoStyled>
+        {displayValue(ApellidoMaterno)}
+      </ApellidoMaternoStyled>
+      <NombreEscuelaStyled title={NombreEscuela}>
+        {displayValue(NombreEscuela)}
+      </NombreEscuelaStyled>
+      <QuienRecogeStyled title={QuienRecoge1}>
+        {displayValue(QuienRecoge1)}
+      </QuienRecogeStyled>
+      <QuienRecogeStyled title={QuienRecoge2}>
+        {displayValue(QuienRecoge2)}
+      </QuienRecogeStyled>
+      <FechaNacimientoStyled>
+        {formatDate(FechaNacimiento)}
+      </FechaNacimientoStyled>
+      <TelefonoStyled>{displayValue(Telefono)}</TelefonoStyled>
+      <CorreoStyled title={Correo}>{displayValue(Correo)}</CorreoStyled>
+      <ActivoStyled>{displayBoolean(Activo)}</ActivoStyled>
+      <TutorStyled title={Tutor}>{displayValue(Tutor)}</TutorStyled>
+      <GradoStyled>{displayValue(Grado)}</GradoStyled>
+      <GrupoStyled>{displayValue(Grupo)}</GrupoStyled>
+      <BecaStyled>{displayBoolean(Beca)}</BecaStyled>
+      <PorcentajeBecaStyled>
+        {Beca ? displayPercentage(PorcentajeBeca) : "-"}
+      </PorcentajeBecaStyled>
+      <ProfesorStyled>{displayValue(Profesor)}</ProfesorStyled>
+      <RangoStyled>{displayValue(Rango)}</RangoStyled>
+      <FechaInscripcionStyled>
+        {formatDate(FechaInscripcion)}
+      </FechaInscripcionStyled>
+      <FechaBajaStyled>{formatDate(FechaBaja)}</FechaBajaStyled>
+      <NickStyled>{displayValue(Nick)}</NickStyled>
+      <PasswordStyled>{displayValue(Password)}</PasswordStyled>
     </TableRow>
   );
 }

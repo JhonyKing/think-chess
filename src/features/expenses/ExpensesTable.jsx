@@ -189,6 +189,7 @@ function ExpensesTable() {
         <Menus>
           <Table columns={columnConfig}>
             <Table.Header>
+              <div>Ac.</div>
               <div>
                 <SortButton onClick={() => handleSort("FechaHora")}>
                   Fecha {renderSortIcon("FechaHora")}
@@ -226,7 +227,6 @@ function ExpensesTable() {
                   Nota {renderSortIcon("Nota")}
                 </SortButton>
               </div>
-              <div>Acciones</div>
             </Table.Header>
             <Table.Body
               data={sortedExpenses}

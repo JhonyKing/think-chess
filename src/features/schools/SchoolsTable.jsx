@@ -73,13 +73,13 @@ function SchoolsTable({
           <TableContainer role="table" aria-label="Lista de Escuelas">
             <Table columns="0.3fr 5.7fr 2.5fr 1fr 1fr 1fr 1fr 0.5fr">
               <Table.Header role="rowheader">
-                <div style={{ gridColumn: "1 / 3" }}>Nombre</div>
+                <div>Ac.</div>
+                <div style={{ gridColumn: "2 / 4" }}>Nombre</div>
                 <div>Dirección</div>
                 <div>Teléfono</div>
                 <div>Zona Escolar</div>
                 <div>Monto Alumno</div>
                 <div>Grado Actual.</div>
-                <div>Acciones</div>
               </Table.Header>
               <Table.Body
                 data={schools}

@@ -32,7 +32,7 @@ export async function getPaymentsByStudentsAndCourse(numeroControls, courseId) {
   const { data, error } = await supabase
     .from("PAGO")
     .select(
-      "NumeroRecibo,NumeroControl,IDCurso,MesPagado,Monto,Liquidado,FechaHora,MetodoPago,Nota,CantidadBeca,PorcentajeBeca"
+      "NumeroRecibo,NumeroControl,IDCurso,MesPagado,Monto,Liquidado,FechaHora,MetodoPago,Nota,CantidadBeca,PorcentajeBeca,Abono"
     )
     .in("NumeroControl", numeroControls)
     .eq("IDCurso", courseId);
@@ -40,6 +40,46 @@ export async function getPaymentsByStudentsAndCourse(numeroControls, courseId) {
   if (error) {
     console.error("Error fetching payments:", error);
     throw new Error("No se pudieron cargar los pagos");
+  }
+
+  return data || [];
+}
+
+/**
+ * Obtiene pagos de un curso específico, incluyendo de estudiantes que
+ * se dieron de baja DURANTE ese curso (que tienen pagos registrados)
+ */
+export async function getAllPaymentsByCourse(courseId, schoolName) {
+  if (!courseId || !schoolName) return [];
+
+  // Obtener todos los estudiantes que alguna vez pertenecieron a esta escuela
+  // (activos e inactivos) que tienen pagos en este curso
+  const { data: studentsWithPayments, error: studentsError } = await supabase
+    .from("ALUMNO")
+    .select("NumeroControl")
+    .eq("NombreEscuela", schoolName);
+
+  if (studentsError) {
+    console.error("Error fetching students for payments:", studentsError);
+    throw new Error("No se pudieron cargar los estudiantes");
+  }
+
+  if (!studentsWithPayments?.length) return [];
+
+  const numeroControls = studentsWithPayments.map((s) => s.NumeroControl);
+
+  // Ahora obtener todos los pagos del curso para estos estudiantes
+  const { data, error } = await supabase
+    .from("PAGO")
+    .select(
+      "NumeroRecibo,NumeroControl,IDCurso,MesPagado,Monto,Liquidado,FechaHora,MetodoPago,Nota,CantidadBeca,PorcentajeBeca,Abono"
+    )
+    .eq("IDCurso", courseId)
+    .in("NumeroControl", numeroControls);
+
+  if (error) {
+    console.error("Error fetching all payments by course:", error);
+    throw new Error("No se pudieron cargar todos los pagos del curso");
   }
 
   return data || [];

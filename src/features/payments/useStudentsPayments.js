@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   getStudentsBySchool,
   getPaymentsByStudentsAndCourse,
+  getAllPaymentsByCourse,
 } from "../../services/apiStudentsPayments";
 
 /**
@@ -23,5 +24,17 @@ export function usePaymentsByStudentsAndCourse(numeroControls, courseId) {
     queryKey: ["paymentsByStudentsAndCourse", numeroControls, courseId],
     queryFn: () => getPaymentsByStudentsAndCourse(numeroControls, courseId),
     enabled: !!numeroControls?.length && !!courseId,
+  });
+}
+
+/**
+ * Hook para obtener TODOS los pagos de un curso
+ * (incluyendo de estudiantes dados de baja DURANTE el curso)
+ */
+export function useAllPaymentsByCourse(courseId, schoolName) {
+  return useQuery({
+    queryKey: ["allPaymentsByCourse", courseId, schoolName],
+    queryFn: () => getAllPaymentsByCourse(courseId, schoolName),
+    enabled: !!courseId && !!schoolName,
   });
 }

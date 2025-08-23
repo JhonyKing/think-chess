@@ -13,6 +13,7 @@ import ConfirmDelete from "../../ui/ConfirmDelete";
 import {
   useStudentsBySchool,
   usePaymentsByStudentsAndCourse,
+  useAllPaymentsByCourse,
 } from "./useStudentsPayments";
 import PaymentReceiptModal from "./PaymentReceiptModal";
 import NewPaymentModal from "./NewPaymentModal";
@@ -21,12 +22,27 @@ import autoTable from "jspdf-autotable";
 
 const TableWrapper = styled.div`
   overflow-x: auto;
+  border: 1px solid var(--color-grey-200);
+  border-radius: var(--border-radius-md);
+`;
+
+const TableContainer = styled.div`
+  max-height: 70vh; /* Altura máxima del contenedor de la tabla */
+  overflow-y: auto; /* Scroll vertical interno */
+  border-radius: var(--border-radius-md);
 `;
 
 const StyledTable = styled.table`
   width: 100%;
   border-collapse: collapse;
-  margin-bottom: 2.4rem;
+  margin-bottom: 0;
+`;
+
+const StickyThead = styled.thead`
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-grey-100);
 `;
 
 const Th = styled.th`
@@ -60,19 +76,18 @@ const TopActions = styled.div`
 
 const DashboardRow = styled.div`
   display: flex;
-  gap: 2.4rem;
-  margin-bottom: 2.4rem;
+  gap: 1rem;
+  margin-bottom: 2rem;
   width: 100%;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 `;
 
 const DashboardCard = styled.div`
   background: #fff;
-  border-radius: 12px;
+  border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
-  padding: 1.6rem 2.2rem;
-  min-width: 180px;
-  flex: 1 1 0;
+  padding: 1rem 1.2rem;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -81,20 +96,30 @@ const DashboardCard = styled.div`
 `;
 
 const CardValue = styled.div`
-  font-size: 2.2rem;
+  font-size: 1.8rem;
   font-weight: 800;
   color: #22223b;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.2rem;
+  line-height: 1;
 `;
 
 const CardLabel = styled.div`
-  font-size: 1.15rem;
+  font-size: 0.9rem;
   color: #6c757d;
   font-weight: 600;
+  line-height: 1.2;
+`;
+
+const CardSubValue = styled.div`
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #6c757d;
+  margin-top: 0.1rem;
+  line-height: 1;
 `;
 
 const CardIcon = styled.div`
-  font-size: 2.2rem;
+  font-size: 1.6rem;
   margin-bottom: 0.2rem;
 `;
 
@@ -145,6 +170,29 @@ function PaymentsTable({ course, schoolId }) {
     isLoading: loadingPayments,
     error: paymentsError,
   } = usePaymentsByStudentsAndCourse(numeroControls, course?.IDCurso);
+
+  // Hook adicional para obtener TODOS los pagos del curso (incluyendo de estudiantes dados de baja DURANTE el curso)
+  const { data: allCoursePayments = [] } = useAllPaymentsByCourse(
+    course?.IDCurso,
+    schoolId
+  );
+
+  // DEBUG: Verificar datos de allCoursePayments
+  console.log("🔍 DEBUG allCoursePayments:");
+  console.log("Total payments fetched:", allCoursePayments.length);
+  console.log("Course ID:", course?.IDCurso);
+  console.log("School ID:", schoolId);
+
+  // Mostrar algunos pagos de ejemplo
+  const samplePayments = allCoursePayments.slice(0, 5);
+  console.log("Sample payments (first 5):", samplePayments);
+
+  // Verificar si hay abonos
+  const abonosInData = allCoursePayments.filter(
+    (p) => p.Abono === true || p.Monto < 1000
+  );
+  console.log("Potential abonos found:", abonosInData.length);
+  console.log("Abonos data:", abonosInData);
   const [sortBy, setSortBy] = useState("deuda");
   const [sortDirection, setSortDirection] = useState("desc");
 
@@ -164,7 +212,8 @@ function PaymentsTable({ course, schoolId }) {
   const [editPayment, setEditPayment] = useState(null);
 
   // Panel de datos relevantes
-  const [totalAlumnosEscuela, setTotalAlumnosEscuela] = useState(0);
+  const [totalBajas, setTotalBajas] = useState(0);
+  const [schoolInfo, setSchoolInfo] = useState(null);
   const [showMesSelect, setShowMesSelect] = useState(false);
   const [mesSeleccionado, setMesSeleccionado] = useState("");
 
@@ -997,59 +1046,212 @@ function PaymentsTable({ course, schoolId }) {
         course?.IDCurso,
       ],
     });
+    queryClient.invalidateQueries({
+      queryKey: ["allPaymentsByCourse", course?.IDCurso, schoolId],
+    }); // NUEVO: Invalidar todos los pagos del curso
     queryClient.invalidateQueries({ queryKey: ["students"] }); // También invalidar la lista general de estudiantes
     queryClient.invalidateQueries({ queryKey: ["payments"] });
     queryClient.invalidateQueries({ queryKey: ["paymentsByStudentAndMonth"] });
     queryClient.invalidateQueries({ queryKey: ["lastPayment"] });
   }
 
-  // Total alumnos registrados en la escuela
+  // Total de bajas sumando todos los meses de la tabla CURSO
   useEffect(() => {
-    async function fetchTotalAlumnosEscuela() {
-      if (!schoolId) return;
-      const { count } = await supabase
-        .from("ALUMNO")
-        .select("NumeroControl", { count: "exact", head: true })
-        .eq("NombreEscuela", schoolId);
-      setTotalAlumnosEscuela(count || 0);
+    async function fetchTotalBajas() {
+      if (!course?.IDCurso) return;
+
+      const { data, error } = await supabase
+        .from("CURSO")
+        .select(
+          `
+          BajasEnero, BajasFebrero, BajasMarzo, BajasAbril, 
+          BajasMayo, BajasJunio, BajasJulio, BajasAgosto, 
+          BajasSeptiembre, BajasOctubre, BajasNoviembre, BajasDiciembre
+        `
+        )
+        .eq("IDCurso", course.IDCurso)
+        .single();
+
+      if (error) {
+        console.error("Error fetching bajas:", error);
+        return;
+      }
+
+      if (data) {
+        const totalBajasCalculado =
+          (data.BajasEnero || 0) +
+          (data.BajasFebrero || 0) +
+          (data.BajasMarzo || 0) +
+          (data.BajasAbril || 0) +
+          (data.BajasMayo || 0) +
+          (data.BajasJunio || 0) +
+          (data.BajasJulio || 0) +
+          (data.BajasAgosto || 0) +
+          (data.BajasSeptiembre || 0) +
+          (data.BajasOctubre || 0) +
+          (data.BajasNoviembre || 0) +
+          (data.BajasDiciembre || 0);
+        setTotalBajas(totalBajasCalculado);
+      }
     }
-    fetchTotalAlumnosEscuela();
+    fetchTotalBajas();
+  }, [course?.IDCurso]);
+
+  // Obtener información de la escuela (mensualidades)
+  useEffect(() => {
+    async function fetchSchoolInfo() {
+      if (!schoolId) return;
+
+      const { data, error } = await supabase
+        .from("ESCUELA")
+        .select("MensualidadPorAlumno, MensualidadConRecargo")
+        .eq("NombreEscuela", schoolId)
+        .single();
+
+      if (error) {
+        console.error("Error fetching school info:", error);
+        return;
+      }
+
+      setSchoolInfo(data);
+    }
+    fetchSchoolInfo();
   }, [schoolId]);
 
   // Datos calculados en render
   // Alumnos activos: students.length
   // Total alumnos: totalAlumnosEscuela
-  // Total mensualidades: suma de pagos de mensualidades pagadas
-  const totalMensualidades = payments
-    .filter((p) => p.Liquidado && p.MesPagado !== "Inscripcion")
-    .reduce((acc, p) => acc + (p.Monto || 0), 0);
-  // Total inscripciones: suma de pagos de inscripciones pagadas
-  const totalInscripciones = payments
+  // Total mensualidades: suma de TODOS los pagos del curso (incluyendo de estudiantes dados de baja)
+  const { totalMensualidadesNormales, totalRecargos } = useMemo(() => {
+    if (!schoolInfo) return { totalMensualidadesNormales: 0, totalRecargos: 0 };
+
+    const mensualidadNormal = schoolInfo.MensualidadPorAlumno || 0;
+    const mensualidadConRecargo = schoolInfo.MensualidadConRecargo || 0;
+    const recargoPorPago = mensualidadConRecargo - mensualidadNormal;
+
+    let totalMensualidadesNormales = 0;
+    let totalRecargos = 0;
+
+    // CRUCIAL: Usar allCoursePayments para incluir pagos de estudiantes dados de baja
+    console.log("🧮 CALCULANDO MENSUALIDADES:");
+    console.log("allCoursePayments length:", allCoursePayments.length);
+
+    const filteredPayments = allCoursePayments.filter(
+      (p) => p.MesPagado !== "Inscripcion"
+    );
+    console.log(
+      "Filtered payments (MesPagado≠Inscripcion - TODOS los pagos):",
+      filteredPayments.length
+    );
+    console.log("Filtered payments data:", filteredPayments);
+
+    filteredPayments.forEach((pago) => {
+      const monto = pago.Monto || 0;
+      console.log(
+        `\n📊 Processing payment: ${pago.NumeroRecibo}, Monto: ${monto}, Abono: ${pago.Abono}, Liquidado: ${pago.Liquidado}`
+      );
+
+      if (monto === mensualidadConRecargo) {
+        // Es una mensualidad CON RECARGO
+        console.log(
+          `   ✅ MENSUALIDAD CON RECARGO: +${mensualidadNormal} (de ${monto})`
+        );
+        // Sumar solo la parte de mensualidad normal (sin recargo)
+        totalMensualidadesNormales += mensualidadNormal;
+        totalRecargos += recargoPorPago;
+      } else if (monto === mensualidadNormal) {
+        // Es una mensualidad NORMAL (sin recargo)
+        console.log(`   ✅ MENSUALIDAD NORMAL: +${monto}`);
+        totalMensualidadesNormales += monto;
+      } else if (monto < mensualidadNormal || pago.Abono === true) {
+        // Es un ABONO (monto menor a mensualidad normal O marcado como abono)
+        console.log(
+          `   ✅ ABONO DETECTADO: +${monto} (Abono=${
+            pago.Abono
+          }, monto<normal=${monto < mensualidadNormal})`
+        );
+        totalMensualidadesNormales += monto;
+      } else {
+        // Cualquier otro pago de mensualidad (casos especiales)
+        console.log(`   ✅ CASO ESPECIAL: +${monto}`);
+        totalMensualidadesNormales += monto;
+      }
+    });
+
+    console.log(`\n🎯 RESULTADO FINAL:`);
+    console.log(
+      `   Total Mensualidades Normales: ${totalMensualidadesNormales}`
+    );
+    console.log(`   Total Recargos: ${totalRecargos}`);
+
+    return { totalMensualidadesNormales, totalRecargos };
+  }, [allCoursePayments, schoolInfo]);
+  // Total inscripciones: suma de TODAS las inscripciones pagadas del curso
+  const totalInscripciones = allCoursePayments
     .filter((p) => p.Liquidado && p.MesPagado === "Inscripcion")
     .reduce((acc, p) => acc + (p.Monto || 0), 0);
   // Inscripciones pendientes: alumnos del curso sin inscripción pagada
-  const inscripcionesPendientes = students.filter((s) => {
-    const pago = payments.find(
-      (p) =>
-        p.NumeroControl === s.NumeroControl &&
-        p.MesPagado === "Inscripcion" &&
-        p.Liquidado
-    );
-    return !pago;
-  }).length;
-  // Mensualidades pendientes: suma de mensualidades no pagadas
-  const mensualidadesPendientes = students.reduce((acc, s) => {
-    const pendientes = months.filter((m) => {
-      const pago = payments.find(
-        (p) =>
-          p.NumeroControl === s.NumeroControl &&
-          p.MesPagado === m &&
-          p.Liquidado
-      );
-      return !pago;
-    });
-    return acc + pendientes.length;
-  }, 0);
+  const { inscripcionesPendientes, montoInscripcionesPendientes } =
+    useMemo(() => {
+      if (!schoolInfo)
+        return { inscripcionesPendientes: 0, montoInscripcionesPendientes: 0 };
+
+      const estudiantesSinInscripcion = students.filter((s) => {
+        const pago = payments.find(
+          (p) =>
+            p.NumeroControl === s.NumeroControl &&
+            p.MesPagado === "Inscripcion" &&
+            p.Liquidado
+        );
+        return !pago;
+      });
+
+      const cantidad = estudiantesSinInscripcion.length;
+      const monto = cantidad * (schoolInfo.MensualidadPorAlumno || 0); // Asumiendo que inscripción = mensualidad
+
+      return {
+        inscripcionesPendientes: cantidad,
+        montoInscripcionesPendientes: monto,
+      };
+    }, [students, payments, schoolInfo]);
+  // Mensualidades pendientes: solo mes actual y anteriores
+  const { mensualidadesPendientes, montoMensualidadesPendientes } =
+    useMemo(() => {
+      if (!schoolInfo)
+        return { mensualidadesPendientes: 0, montoMensualidadesPendientes: 0 };
+
+      const ahora = new Date();
+      const mesActual = ahora.getMonth(); // 0-11
+
+      // Filtrar solo meses actuales y anteriores
+      const mesesHastaAhora = months.filter((mes) => {
+        const indiceMes = MESES_DB.indexOf(mes);
+        return indiceMes !== -1 && indiceMes <= mesActual;
+      });
+
+      let cantidadPendientes = 0;
+
+      students.forEach((s) => {
+        const pendientes = mesesHastaAhora.filter((m) => {
+          const pago = payments.find(
+            (p) =>
+              p.NumeroControl === s.NumeroControl &&
+              p.MesPagado === m &&
+              p.Liquidado
+          );
+          return !pago;
+        });
+        cantidadPendientes += pendientes.length;
+      });
+
+      const montoPendiente =
+        cantidadPendientes * (schoolInfo.MensualidadPorAlumno || 0);
+
+      return {
+        mensualidadesPendientes: cantidadPendientes,
+        montoMensualidadesPendientes: montoPendiente,
+      };
+    }, [students, payments, months, schoolInfo]);
 
   if (!course) return null;
   if (loading || loadingPayments) return <div>Cargando alumnos...</div>;
@@ -1210,13 +1412,13 @@ function PaymentsTable({ course, schoolId }) {
           <CardLabel>Alumnos activos</CardLabel>
         </DashboardCard>
         <DashboardCard>
-          <CardIcon>🏫</CardIcon>
-          <CardValue>{totalAlumnosEscuela}</CardValue>
-          <CardLabel>Total alumnos</CardLabel>
+          <CardIcon>📉</CardIcon>
+          <CardValue>{totalBajas}</CardValue>
+          <CardLabel>Bajas</CardLabel>
         </DashboardCard>
         <DashboardCard>
           <CardIcon>💵</CardIcon>
-          <CardValue>${totalMensualidades.toFixed(2)}</CardValue>
+          <CardValue>${totalMensualidadesNormales.toFixed(2)}</CardValue>
           <CardLabel>Total mensualidades</CardLabel>
         </DashboardCard>
         <DashboardCard>
@@ -1225,13 +1427,24 @@ function PaymentsTable({ course, schoolId }) {
           <CardLabel>Total inscripciones</CardLabel>
         </DashboardCard>
         <DashboardCard>
+          <CardIcon>💰</CardIcon>
+          <CardValue>${totalRecargos.toFixed(2)}</CardValue>
+          <CardLabel>Recargos pagados</CardLabel>
+        </DashboardCard>
+        <DashboardCard>
           <CardIcon>❗</CardIcon>
           <CardValue>{inscripcionesPendientes}</CardValue>
+          <CardSubValue>
+            ${montoInscripcionesPendientes.toFixed(2)}
+          </CardSubValue>
           <CardLabel>Inscripciones pendientes</CardLabel>
         </DashboardCard>
         <DashboardCard>
           <CardIcon>📅</CardIcon>
           <CardValue>{mensualidadesPendientes}</CardValue>
+          <CardSubValue>
+            ${montoMensualidadesPendientes.toFixed(2)}
+          </CardSubValue>
           <CardLabel>Mensualidades pendientes</CardLabel>
         </DashboardCard>
       </DashboardRow>
@@ -1311,118 +1524,123 @@ function PaymentsTable({ course, schoolId }) {
         </div>
       )}
       <TableWrapper>
-        <StyledTable>
-          <thead>
-            <tr>
-              {columns.map((col) => (
-                <Th
-                  key={col.key}
-                  onClick={
-                    col.sortable !== false
-                      ? () =>
-                          handleSort(col.key, col.isMonth, col.isInscription)
-                      : undefined
-                  }
-                  style={{
-                    cursor: col.sortable !== false ? "pointer" : "default",
-                    backgroundColor:
-                      (col.isMonth && monthSort[col.key]) ||
-                      (col.isInscription && monthSort["Inscripcion"])
-                        ? "#e3f2fd"
-                        : undefined,
-                  }}
-                  aria-label={
-                    col.sortable !== false
-                      ? `Ordenar por ${col.label}`
-                      : col.label
-                  }
-                >
-                  {col.label}
-                  {col.isMonth && monthSort[col.key]
-                    ? ` (${monthSort[col.key]})`
-                    : col.isInscription && monthSort["Inscripcion"]
-                    ? ` (${monthSort["Inscripcion"]})`
-                    : sortBy === col.key
-                    ? sortDirection === "asc"
-                      ? " ▲"
-                      : " ▼"
-                    : null}
-                </Th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {sortedStudents.map((student, idx) => (
-              <tr key={student.NumeroControl}>
-                {/* Columna de Acciones - PRIMERA */}
-                <Td>
-                  <Menus>
-                    <Menus.Menu>
-                      <Menus.Toggle id={`actions-${student.NumeroControl}`} />
-                      <Menus.List id={`actions-${student.NumeroControl}`}>
-                        <Menus.Button
-                          icon={<HiEye />}
-                          onClick={() => handleKardex(student)}
-                        >
-                          Ver Kardex
-                        </Menus.Button>
-                        <Menus.Button
-                          icon={<HiPencil />}
-                          onClick={() => handleEdit(student)}
-                        >
-                          Editar
-                        </Menus.Button>
-                        <Menus.Button
-                          icon={<HiTrash />}
-                          onClick={() => handleDelete(student)}
-                        >
-                          Eliminar
-                        </Menus.Button>
-                      </Menus.List>
-                    </Menus.Menu>
-                  </Menus>
-                </Td>
-                {/* Columnas base */}
-                <Td>{idx + 1}</Td>
-                <Td>{student.NumeroControl}</Td>
-                <Td>{student.ApellidoPaterno}</Td>
-                <Td>{student.ApellidoMaterno}</Td>
-                <Td>{student.Nombre}</Td>
-                <Td>{student.deuda}</Td>
-                {/* Columna de Inscripción */}
-                <Td>
-                  <PaymentStatusButton
-                    payment={findPayment(student.NumeroControl, "Inscripcion")}
-                    numeroControl={student.NumeroControl}
-                    mesPagado="Inscripcion"
-                    idCurso={course.IDCurso}
-                    onShowReceipt={handleShowReceipt}
-                    onShowAbono={handleShowAbono}
-                    onShowNoAplica={handleShowNoAplica}
-                    onShowNuevoPago={() =>
-                      handleShowNuevoPago(student, "Inscripcion")
+        <TableContainer>
+          <StyledTable>
+            <StickyThead>
+              <tr>
+                {columns.map((col) => (
+                  <Th
+                    key={col.key}
+                    onClick={
+                      col.sortable !== false
+                        ? () =>
+                            handleSort(col.key, col.isMonth, col.isInscription)
+                        : undefined
                     }
-                  />
-                </Td>
-                {/* Columnas de meses */}
-                {months.map((m) => (
-                  <Td key={m}>
+                    style={{
+                      cursor: col.sortable !== false ? "pointer" : "default",
+                      backgroundColor:
+                        (col.isMonth && monthSort[col.key]) ||
+                        (col.isInscription && monthSort["Inscripcion"])
+                          ? "#e3f2fd"
+                          : undefined,
+                    }}
+                    aria-label={
+                      col.sortable !== false
+                        ? `Ordenar por ${col.label}`
+                        : col.label
+                    }
+                  >
+                    {col.label}
+                    {col.isMonth && monthSort[col.key]
+                      ? ` (${monthSort[col.key]})`
+                      : col.isInscription && monthSort["Inscripcion"]
+                      ? ` (${monthSort["Inscripcion"]})`
+                      : sortBy === col.key
+                      ? sortDirection === "asc"
+                        ? " ▲"
+                        : " ▼"
+                      : null}
+                  </Th>
+                ))}
+              </tr>
+            </StickyThead>
+            <tbody>
+              {sortedStudents.map((student, idx) => (
+                <tr key={student.NumeroControl}>
+                  {/* Columna de Acciones - PRIMERA */}
+                  <Td>
+                    <Menus>
+                      <Menus.Menu>
+                        <Menus.Toggle id={`actions-${student.NumeroControl}`} />
+                        <Menus.List id={`actions-${student.NumeroControl}`}>
+                          <Menus.Button
+                            icon={<HiEye />}
+                            onClick={() => handleKardex(student)}
+                          >
+                            Ver Kardex
+                          </Menus.Button>
+                          <Menus.Button
+                            icon={<HiPencil />}
+                            onClick={() => handleEdit(student)}
+                          >
+                            Editar
+                          </Menus.Button>
+                          <Menus.Button
+                            icon={<HiTrash />}
+                            onClick={() => handleDelete(student)}
+                          >
+                            Eliminar
+                          </Menus.Button>
+                        </Menus.List>
+                      </Menus.Menu>
+                    </Menus>
+                  </Td>
+                  {/* Columnas base */}
+                  <Td>{idx + 1}</Td>
+                  <Td>{student.NumeroControl}</Td>
+                  <Td>{student.ApellidoPaterno}</Td>
+                  <Td>{student.ApellidoMaterno}</Td>
+                  <Td>{student.Nombre}</Td>
+                  <Td>{student.deuda}</Td>
+                  {/* Columna de Inscripción */}
+                  <Td>
                     <PaymentStatusButton
-                      payment={findPayment(student.NumeroControl, m)}
+                      payment={findPayment(
+                        student.NumeroControl,
+                        "Inscripcion"
+                      )}
                       numeroControl={student.NumeroControl}
-                      mesPagado={m}
+                      mesPagado="Inscripcion"
                       idCurso={course.IDCurso}
                       onShowReceipt={handleShowReceipt}
                       onShowAbono={handleShowAbono}
                       onShowNoAplica={handleShowNoAplica}
-                      onShowNuevoPago={() => handleShowNuevoPago(student, m)}
+                      onShowNuevoPago={() =>
+                        handleShowNuevoPago(student, "Inscripcion")
+                      }
                     />
                   </Td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </StyledTable>
+                  {/* Columnas de meses */}
+                  {months.map((m) => (
+                    <Td key={m}>
+                      <PaymentStatusButton
+                        payment={findPayment(student.NumeroControl, m)}
+                        numeroControl={student.NumeroControl}
+                        mesPagado={m}
+                        idCurso={course.IDCurso}
+                        onShowReceipt={handleShowReceipt}
+                        onShowAbono={handleShowAbono}
+                        onShowNoAplica={handleShowNoAplica}
+                        onShowNuevoPago={() => handleShowNuevoPago(student, m)}
+                      />
+                    </Td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </StyledTable>
+        </TableContainer>
       </TableWrapper>
       <Modal.Window name="student-form">
         {studentToEdit && (

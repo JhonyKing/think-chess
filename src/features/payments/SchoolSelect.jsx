@@ -22,12 +22,43 @@ function SchoolSelect({ onSelect }) {
   useEffect(() => {
     async function fetchSchools() {
       setLoading(true);
+
+      // Get schools that have active courses (regardless of their Activo field)
       const { data, error } = await supabase
         .from("ESCUELA")
-        .select("NombreEscuela,Activo")
-        .eq("Activo", true)
+        .select(
+          `
+          NombreEscuela,
+          Activo,
+          CURSO!inner(
+            IDCurso,
+            Activo
+          )
+        `
+        )
+        .eq("CURSO.Activo", true)
         .order("NombreEscuela");
-      if (!error) setSchools(data);
+
+      if (!error) {
+        // Remove duplicate schools (in case a school has multiple active courses)
+        const uniqueSchools = data.reduce((acc, school) => {
+          if (!acc.find((s) => s.NombreEscuela === school.NombreEscuela)) {
+            acc.push({
+              NombreEscuela: school.NombreEscuela,
+              Activo: school.Activo,
+            });
+          }
+          return acc;
+        }, []);
+
+        setSchools(uniqueSchools);
+        console.log(
+          `[SchoolSelect] Encontradas ${uniqueSchools.length} escuelas con cursos activos:`,
+          uniqueSchools
+        );
+      } else {
+        console.error("Error fetching schools with active courses:", error);
+      }
       setLoading(false);
     }
     fetchSchools();

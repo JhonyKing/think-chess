@@ -1,11 +1,17 @@
 import { useEffect, useState, useMemo, useCallback, useContext } from "react";
 import styled from "styled-components";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery } from "@tanstack/react-query";
 import supabase from "../../services/supabase";
 import { toast } from "react-hot-toast";
 import PaymentStatusButton from "./PaymentStatusButton";
 import Menus from "../../ui/Menus";
-import { HiPencil, HiTrash, HiEye } from "react-icons/hi2";
+import {
+  HiPencil,
+  HiTrash,
+  HiEye,
+  HiArrowDownCircle,
+  HiArrowUpCircle,
+} from "react-icons/hi2";
 import Modal, { ModalContext } from "../../ui/Modal";
 import CreateStudentForm from "../students/CreateStudentForm";
 import StudentKardexView from "../students/StudentKardexView";
@@ -17,8 +23,14 @@ import {
 } from "./useStudentsPayments";
 import PaymentReceiptModal from "./PaymentReceiptModal";
 import NewPaymentModal from "./NewPaymentModal";
+import {
+  deactivateStudent,
+  reactivateStudent,
+} from "../../services/apiStudents";
+import { useMutation } from "@tanstack/react-query";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { useSendMassReminders } from "../emails/useSendEmail";
 
 const TableWrapper = styled.div`
   overflow-x: auto;
@@ -153,6 +165,24 @@ function getMonthsBetween(start, end) {
 }
 
 function PaymentsTable({ course, schoolId }) {
+  // Query para obtener detalles completos del curso (incluyendo campos de bajas/altas)
+  const { data: fullCourseData } = useQuery({
+    queryKey: ["course-full-details", course?.IDCurso],
+    queryFn: async () => {
+      if (!course?.IDCurso) return null;
+      const { data, error } = await supabase
+        .from("CURSO")
+        .select(
+          "*, BajasEnero, BajasFebrero, BajasMarzo, BajasAbril, BajasMayo, BajasJunio, BajasJulio, BajasAgosto, BajasSeptiembre, BajasOctubre, BajasNoviembre, BajasDiciembre, AltasEnero, AltasFebrero, AltasMarzo, AltasAbril, AltasMayo, AltasJunio, AltasJulio, AltasAgosto, AltasSeptiembre, AltasOctubre, AltasNoviembre, AltasDiciembre"
+        )
+        .eq("IDCurso", course.IDCurso)
+        .single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!course?.IDCurso,
+  });
+
   // Usar React Query para estudiantes y pagos
   const {
     data: students = [],
@@ -177,22 +207,6 @@ function PaymentsTable({ course, schoolId }) {
     schoolId
   );
 
-  // DEBUG: Verificar datos de allCoursePayments
-  console.log("🔍 DEBUG allCoursePayments:");
-  console.log("Total payments fetched:", allCoursePayments.length);
-  console.log("Course ID:", course?.IDCurso);
-  console.log("School ID:", schoolId);
-
-  // Mostrar algunos pagos de ejemplo
-  const samplePayments = allCoursePayments.slice(0, 5);
-  console.log("Sample payments (first 5):", samplePayments);
-
-  // Verificar si hay abonos
-  const abonosInData = allCoursePayments.filter(
-    (p) => p.Abono === true || p.Monto < 1000
-  );
-  console.log("Potential abonos found:", abonosInData.length);
-  console.log("Abonos data:", abonosInData);
   const [sortBy, setSortBy] = useState("deuda");
   const [sortDirection, setSortDirection] = useState("desc");
 
@@ -207,15 +221,70 @@ function PaymentsTable({ course, schoolId }) {
   const { open: openModal } = useContext(ModalContext);
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [selectedAbono, setSelectedAbono] = useState(null);
+
+  // QueryClient para invalidar queries
+  const queryClient = useQueryClient();
+
   const [selectedNoAplica, setSelectedNoAplica] = useState(null);
   const [nuevoPagoInfo, setNuevoPagoInfo] = useState(null);
   const [editPayment, setEditPayment] = useState(null);
 
+  // Mutaciones para desactivar/reactivar estudiantes
+  const { isLoading: isDeactivating, mutate: mutateDeactivate } = useMutation({
+    mutationFn: deactivateStudent,
+    onSuccess: () => {
+      toast.success(`Estudiante desactivado`);
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({
+        queryKey: ["studentsBySchool", schoolId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["courses", schoolId] });
+      queryClient.invalidateQueries({
+        queryKey: ["course-full-details", course?.IDCurso],
+      });
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({
+        queryKey: ["paymentsByStudentAndMonth"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["paymentsByStudentsAndCourse"],
+      });
+      queryClient.invalidateQueries({ queryKey: ["allPaymentsByCourse"] });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const { isLoading: isReactivating, mutate: mutateReactivate } = useMutation({
+    mutationFn: reactivateStudent,
+    onSuccess: () => {
+      toast.success(`Estudiante reactivado`);
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({
+        queryKey: ["studentsBySchool", schoolId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["courses", schoolId] });
+      queryClient.invalidateQueries({
+        queryKey: ["course-full-details", course?.IDCurso],
+      });
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
+      queryClient.invalidateQueries({
+        queryKey: ["paymentsByStudentAndMonth"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["paymentsByStudentsAndCourse"],
+      });
+      queryClient.invalidateQueries({ queryKey: ["allPaymentsByCourse"] });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   // Panel de datos relevantes
-  const [totalBajas, setTotalBajas] = useState(0);
   const [schoolInfo, setSchoolInfo] = useState(null);
   const [showMesSelect, setShowMesSelect] = useState(false);
   const [mesSeleccionado, setMesSeleccionado] = useState("");
+
+  // Hook para envío masivo de recordatorios
+  const { sendReminders, isSendingReminders } = useSendMassReminders();
 
   // Lista de escuelas para obtener logos
   const [schoolsList, setSchoolsList] = useState([]);
@@ -842,7 +911,7 @@ function PaymentsTable({ course, schoolId }) {
       escuelaCurso?.Nombre?.replace(/\s+/g, "_") || "Escuela"
     }_${new Date().toISOString().slice(0, 10)}.pdf`;
     doc.save(fileName);
-  }, [students, payments, course, schoolId, schoolsList]);
+  }, [students, course, schoolId, schoolsList]);
 
   // Manejo de errores
   useEffect(() => {
@@ -856,8 +925,6 @@ function PaymentsTable({ course, schoolId }) {
       toast.error("Error al cargar pagos: " + paymentsError.message);
     }
   }, [paymentsError]);
-
-  const queryClient = useQueryClient();
 
   const months = useMemo(
     () => getMonthsBetween(course?.InicioCurso, course?.FinCurso),
@@ -907,7 +974,7 @@ function PaymentsTable({ course, schoolId }) {
       });
       return { ...student, deuda };
     });
-  }, [students, payments, months, findPayment]);
+  }, [students, months, findPayment]);
 
   // Ordenamiento
   const sortedStudents = useMemo(() => {
@@ -1055,47 +1122,49 @@ function PaymentsTable({ course, schoolId }) {
     queryClient.invalidateQueries({ queryKey: ["lastPayment"] });
   }
 
-  // Total de bajas sumando todos los meses de la tabla CURSO
-  useEffect(() => {
-    async function fetchTotalBajas() {
-      if (!course?.IDCurso) return;
+  // SOLUCIÓN SIMPLE: Contar estudiantes inactivos que tienen pagos en este curso
+  const totalBajas = useMemo(() => {
+    if (!allCoursePayments.length || !students.length) return 0;
 
-      const { data, error } = await supabase
-        .from("CURSO")
-        .select(
-          `
-          BajasEnero, BajasFebrero, BajasMarzo, BajasAbril, 
-          BajasMayo, BajasJunio, BajasJulio, BajasAgosto, 
-          BajasSeptiembre, BajasOctubre, BajasNoviembre, BajasDiciembre
-        `
-        )
-        .eq("IDCurso", course.IDCurso)
-        .single();
+    // Obtener NumeroControls únicos de todos los pagos del curso
+    const numeroControlsConPagos = [
+      ...new Set(allCoursePayments.map((p) => p.NumeroControl)),
+    ];
 
-      if (error) {
-        console.error("Error fetching bajas:", error);
-        return;
-      }
+    // Obtener NumeroControls de estudiantes activos
+    const numeroControlsActivos = students.map((s) => s.NumeroControl);
 
-      if (data) {
-        const totalBajasCalculado =
-          (data.BajasEnero || 0) +
-          (data.BajasFebrero || 0) +
-          (data.BajasMarzo || 0) +
-          (data.BajasAbril || 0) +
-          (data.BajasMayo || 0) +
-          (data.BajasJunio || 0) +
-          (data.BajasJulio || 0) +
-          (data.BajasAgosto || 0) +
-          (data.BajasSeptiembre || 0) +
-          (data.BajasOctubre || 0) +
-          (data.BajasNoviembre || 0) +
-          (data.BajasDiciembre || 0);
-        setTotalBajas(totalBajasCalculado);
-      }
-    }
-    fetchTotalBajas();
-  }, [course?.IDCurso]);
+    // Contar cuántos estudiantes con pagos NO están en la lista de activos
+    const estudiantesInactivosConPagos = numeroControlsConPagos.filter(
+      (nc) => !numeroControlsActivos.includes(nc)
+    );
+
+    return estudiantesInactivosConPagos.length;
+  }, [allCoursePayments, students]);
+
+  // Calcular total de altas desde los campos de la tabla CURSO
+  const totalAltas = useMemo(() => {
+    if (!fullCourseData) return 0;
+
+    const altasFields = [
+      "AltasEnero",
+      "AltasFebrero",
+      "AltasMarzo",
+      "AltasAbril",
+      "AltasMayo",
+      "AltasJunio",
+      "AltasJulio",
+      "AltasAgosto",
+      "AltasSeptiembre",
+      "AltasOctubre",
+      "AltasNoviembre",
+      "AltasDiciembre",
+    ];
+
+    return altasFields.reduce((total, field) => {
+      return total + (fullCourseData[field] || 0);
+    }, 0);
+  }, [fullCourseData]);
 
   // Obtener información de la escuela (mensualidades)
   useEffect(() => {
@@ -1104,7 +1173,7 @@ function PaymentsTable({ course, schoolId }) {
 
       const { data, error } = await supabase
         .from("ESCUELA")
-        .select("MensualidadPorAlumno, MensualidadConRecargo")
+        .select("MensualidadPorAlumno, MensualidadConRecargo, Inscripcion")
         .eq("NombreEscuela", schoolId)
         .single();
 
@@ -1126,70 +1195,84 @@ function PaymentsTable({ course, schoolId }) {
     if (!schoolInfo) return { totalMensualidadesNormales: 0, totalRecargos: 0 };
 
     const mensualidadNormal = schoolInfo.MensualidadPorAlumno || 0;
-    const mensualidadConRecargo = schoolInfo.MensualidadConRecargo || 0;
-    const recargoPorPago = mensualidadConRecargo - mensualidadNormal;
 
     let totalMensualidadesNormales = 0;
     let totalRecargos = 0;
 
-    // CRUCIAL: Usar allCoursePayments para incluir pagos de estudiantes dados de baja
-    console.log("🧮 CALCULANDO MENSUALIDADES:");
-    console.log("allCoursePayments length:", allCoursePayments.length);
-
-    const filteredPayments = allCoursePayments.filter(
-      (p) => p.MesPagado !== "Inscripcion"
+    // Filtrar pagos mensuales (no inscripciones) con monto > 0
+    const pagosMensuales = allCoursePayments.filter(
+      (p) => p.MesPagado !== "Inscripcion" && p.Monto > 0
     );
-    console.log(
-      "Filtered payments (MesPagado≠Inscripcion - TODOS los pagos):",
-      filteredPayments.length
-    );
-    console.log("Filtered payments data:", filteredPayments);
 
-    filteredPayments.forEach((pago) => {
-      const monto = pago.Monto || 0;
-      console.log(
-        `\n📊 Processing payment: ${pago.NumeroRecibo}, Monto: ${monto}, Abono: ${pago.Abono}, Liquidado: ${pago.Liquidado}`
-      );
+    // Agrupar pagos por NumeroControl y MesPagado para manejar abonos correctamente
+    const pagosPorEstudianteYMes = {};
 
-      if (monto === mensualidadConRecargo) {
-        // Es una mensualidad CON RECARGO
-        console.log(
-          `   ✅ MENSUALIDAD CON RECARGO: +${mensualidadNormal} (de ${monto})`
-        );
-        // Sumar solo la parte de mensualidad normal (sin recargo)
-        totalMensualidadesNormales += mensualidadNormal;
-        totalRecargos += recargoPorPago;
-      } else if (monto === mensualidadNormal) {
-        // Es una mensualidad NORMAL (sin recargo)
-        console.log(`   ✅ MENSUALIDAD NORMAL: +${monto}`);
-        totalMensualidadesNormales += monto;
-      } else if (monto < mensualidadNormal || pago.Abono === true) {
-        // Es un ABONO (monto menor a mensualidad normal O marcado como abono)
-        console.log(
-          `   ✅ ABONO DETECTADO: +${monto} (Abono=${
-            pago.Abono
-          }, monto<normal=${monto < mensualidadNormal})`
-        );
-        totalMensualidadesNormales += monto;
+    pagosMensuales.forEach((pago) => {
+      const key = `${pago.NumeroControl}-${pago.MesPagado}`;
+      if (!pagosPorEstudianteYMes[key]) {
+        pagosPorEstudianteYMes[key] = [];
+      }
+      pagosPorEstudianteYMes[key].push(pago);
+    });
+
+    // Procesar cada grupo de pagos (por estudiante y mes)
+    Object.values(pagosPorEstudianteYMes).forEach((pagosDelMes) => {
+      // Verificar si hay abonos en este grupo
+      const tieneAbonos = pagosDelMes.some((p) => p.Abono === true);
+
+      if (tieneAbonos) {
+        // Para abonos: sumar TODOS los abonos del mes y calcular excedente
+        const totalAbonosDelMes = pagosDelMes
+          .filter((p) => p.Abono === true)
+          .reduce((sum, p) => sum + (p.Monto || 0), 0);
+
+        if (totalAbonosDelMes > mensualidadNormal) {
+          // El excedente de abonos va a recargos
+          totalMensualidadesNormales += mensualidadNormal;
+          totalRecargos += totalAbonosDelMes - mensualidadNormal;
+        } else {
+          // Todo va a mensualidades normales
+          totalMensualidadesNormales += totalAbonosDelMes;
+        }
+
+        // También sumar los pagos no-abono de este mes
+        const pagosNoAbono = pagosDelMes.filter((p) => p.Abono !== true);
+        pagosNoAbono.forEach((pago) => {
+          const monto = pago.Monto || 0;
+          if (monto > mensualidadNormal) {
+            totalMensualidadesNormales += mensualidadNormal;
+            totalRecargos += monto - mensualidadNormal;
+          } else {
+            totalMensualidadesNormales += monto;
+          }
+        });
       } else {
-        // Cualquier otro pago de mensualidad (casos especiales)
-        console.log(`   ✅ CASO ESPECIAL: +${monto}`);
-        totalMensualidadesNormales += monto;
+        // Para pagos normales (PA): verificar si exceden mensualidad normal
+        pagosDelMes.forEach((pago) => {
+          const monto = pago.Monto || 0;
+          if (monto > mensualidadNormal) {
+            // El excedente va a recargos
+            totalMensualidadesNormales += mensualidadNormal;
+            totalRecargos += monto - mensualidadNormal;
+          } else {
+            // Todo va a mensualidades normales
+            totalMensualidadesNormales += monto;
+          }
+        });
       }
     });
 
-    console.log(`\n🎯 RESULTADO FINAL:`);
-    console.log(
-      `   Total Mensualidades Normales: ${totalMensualidadesNormales}`
-    );
-    console.log(`   Total Recargos: ${totalRecargos}`);
-
     return { totalMensualidadesNormales, totalRecargos };
   }, [allCoursePayments, schoolInfo]);
-  // Total inscripciones: suma de TODAS las inscripciones pagadas del curso
-  const totalInscripciones = allCoursePayments
-    .filter((p) => p.Liquidado && p.MesPagado === "Inscripcion")
-    .reduce((acc, p) => acc + (p.Monto || 0), 0);
+  // Total inscripciones: suma de TODAS las inscripciones pagadas del curso (EXCLUYENDO pagos nulos)
+  const inscripcionesPagadas = allCoursePayments.filter(
+    (p) => p.Liquidado && p.MesPagado === "Inscripcion" && p.Monto > 0
+  );
+  const totalInscripciones = inscripcionesPagadas.reduce(
+    (acc, p) => acc + (p.Monto || 0),
+    0
+  );
+
   // Inscripciones pendientes: alumnos del curso sin inscripción pagada
   const { inscripcionesPendientes, montoInscripcionesPendientes } =
     useMemo(() => {
@@ -1197,61 +1280,107 @@ function PaymentsTable({ course, schoolId }) {
         return { inscripcionesPendientes: 0, montoInscripcionesPendientes: 0 };
 
       const estudiantesSinInscripcion = students.filter((s) => {
-        const pago = payments.find(
+        const pago = allCoursePayments.find(
           (p) =>
             p.NumeroControl === s.NumeroControl &&
             p.MesPagado === "Inscripcion" &&
-            p.Liquidado
+            (p.Liquidado || p.Monto === 0) // Incluir pagos nulos (Monto = 0) como "pagados" para restar de pendientes
         );
         return !pago;
       });
 
       const cantidad = estudiantesSinInscripcion.length;
-      const monto = cantidad * (schoolInfo.MensualidadPorAlumno || 0); // Asumiendo que inscripción = mensualidad
+      const monto = cantidad * (schoolInfo.Inscripcion || 0); // Usar el monto real de inscripción de la escuela
 
       return {
         inscripcionesPendientes: cantidad,
         montoInscripcionesPendientes: monto,
       };
-    }, [students, payments, schoolInfo]);
-  // Mensualidades pendientes: solo mes actual y anteriores
+    }, [students, allCoursePayments, schoolInfo]);
+  // CÁLCULO DIRECTO FORZADO
+  console.log("🔍 FORZANDO CÁLCULO DE MENSUALIDADES PENDIENTES:");
+  console.log("👥 students:", students);
+  console.log("💰 schoolInfo:", schoolInfo);
+  console.log("📊 allCoursePayments:", allCoursePayments);
+
+  // CÁLCULO CORRECTO Y DINÁMICO DE MENSUALIDADES PENDIENTES
   const { mensualidadesPendientes, montoMensualidadesPendientes } =
     useMemo(() => {
-      if (!schoolInfo)
+      if (!schoolInfo || !students.length || !allCoursePayments) {
         return { mensualidadesPendientes: 0, montoMensualidadesPendientes: 0 };
+      }
 
-      const ahora = new Date();
-      const mesActual = ahora.getMonth(); // 0-11
-
-      // Filtrar solo meses actuales y anteriores
-      const mesesHastaAhora = months.filter((mes) => {
-        const indiceMes = MESES_DB.indexOf(mes);
-        return indiceMes !== -1 && indiceMes <= mesActual;
-      });
-
+      const mensualidadNormal = schoolInfo.MensualidadPorAlumno || 0;
       let cantidadPendientes = 0;
+      let montoPendienteTotal = 0;
 
-      students.forEach((s) => {
-        const pendientes = mesesHastaAhora.filter((m) => {
-          const pago = payments.find(
+      console.log("🔄 CALCULANDO MENSUALIDADES PENDIENTES:");
+      console.log("👥 students.length:", students.length);
+      console.log("📊 allCoursePayments.length:", allCoursePayments.length);
+
+      students.forEach((student) => {
+        months.forEach((month) => {
+          // Buscar todos los pagos de este estudiante para este mes
+          const pagosDelMes = allCoursePayments.filter(
             (p) =>
-              p.NumeroControl === s.NumeroControl &&
-              p.MesPagado === m &&
-              p.Liquidado
+              p.NumeroControl === student.NumeroControl && p.MesPagado === month
           );
-          return !pago;
+
+          if (pagosDelMes.length === 0) {
+            // No hay pagos → pendiente
+            cantidadPendientes += 1;
+            montoPendienteTotal += mensualidadNormal;
+            console.log(`❌ ${student.ApellidoPaterno} - ${month}: SIN PAGOS`);
+          } else {
+            // Verificar si está liquidado o es pago nulo
+            const pagoLiquidado = pagosDelMes.find((p) => p.Liquidado === true);
+            const pagoNulo = pagosDelMes.find((p) => p.Monto === 0);
+
+            if (pagoLiquidado || pagoNulo) {
+              console.log(`✅ ${student.ApellidoPaterno} - ${month}: PAGADO`);
+              return; // No pendiente
+            }
+
+            // Verificar abonos
+            const abonos = pagosDelMes.filter((p) => p.Abono === true);
+            if (abonos.length > 0) {
+              const totalAbonado = abonos.reduce(
+                (sum, p) => sum + (p.Monto || 0),
+                0
+              );
+              const faltaPagar = mensualidadNormal - totalAbonado;
+
+              if (faltaPagar > 0) {
+                cantidadPendientes += 1;
+                montoPendienteTotal += faltaPagar;
+                console.log(
+                  `🟡 ${student.ApellidoPaterno} - ${month}: ABONO PARCIAL (falta $${faltaPagar})`
+                );
+              } else {
+                console.log(
+                  `✅ ${student.ApellidoPaterno} - ${month}: ABONOS COMPLETOS`
+                );
+              }
+            } else {
+              // Hay pagos pero no liquidados → pendiente
+              cantidadPendientes += 1;
+              montoPendienteTotal += mensualidadNormal;
+              console.log(
+                `❌ ${student.ApellidoPaterno} - ${month}: PAGO NO LIQUIDADO`
+              );
+            }
+          }
         });
-        cantidadPendientes += pendientes.length;
       });
 
-      const montoPendiente =
-        cantidadPendientes * (schoolInfo.MensualidadPorAlumno || 0);
+      console.log("📊 TOTAL PENDIENTES:", cantidadPendientes);
+      console.log("💰 TOTAL MONTO:", montoPendienteTotal);
 
       return {
         mensualidadesPendientes: cantidadPendientes,
-        montoMensualidadesPendientes: montoPendiente,
+        montoMensualidadesPendientes: montoPendienteTotal,
       };
-    }, [students, payments, months, schoolInfo]);
+    }, [students, allCoursePayments, months, schoolInfo]);
 
   if (!course) return null;
   if (loading || loadingPayments) return <div>Cargando alumnos...</div>;
@@ -1326,6 +1455,14 @@ function PaymentsTable({ course, schoolId }) {
     openModal("delete-student");
   }
 
+  function handleDeactivate(student) {
+    mutateDeactivate(student.NumeroControl);
+  }
+
+  function handleReactivate(student) {
+    mutateReactivate(student.NumeroControl);
+  }
+
   // Handler para mostrar el recibo de pago
   function handleShowReceipt(payment) {
     setSelectedPayment(payment);
@@ -1386,21 +1523,49 @@ function PaymentsTable({ course, schoolId }) {
   function handleSeleccionarMes(e) {
     setMesSeleccionado(e.target.value);
   }
+
   function handleEnviarRecordatorios() {
-    // Simulado: filtra alumnos con adeudo en el mes seleccionado y muestra toast
+    if (!mesSeleccionado) {
+      toast.error("Por favor selecciona un mes");
+      return;
+    }
+
+    // Filtrar alumnos con adeudo en el mes seleccionado
     const alumnosAdeudo = students.filter((s) => {
       const pago = payments.find(
         (p) =>
           p.NumeroControl === s.NumeroControl &&
           p.MesPagado === mesSeleccionado &&
-          p.Liquidado
+          (p.Liquidado || p.Monto > 0) // Considerar pagados los que están liquidados o tienen monto > 0 (no son NA)
       );
-      return !pago;
+      return !pago; // Retornar true si NO tiene pago (tiene adeudo)
     });
-    alert(
-      `Se enviarían recordatorios a ${alumnosAdeudo.length} alumnos con adeudo en ${mesSeleccionado}`
+
+    if (alumnosAdeudo.length === 0) {
+      toast.success(`No hay alumnos con adeudo en ${mesSeleccionado}`);
+      setShowMesSelect(false);
+      return;
+    }
+
+    // Confirmar envío
+    const confirmar = window.confirm(
+      `¿Está seguro de enviar recordatorios a ${alumnosAdeudo.length} alumnos con adeudo en ${mesSeleccionado}?`
     );
-    setShowMesSelect(false);
+
+    if (confirmar) {
+      // Enviar recordatorios usando el hook
+      sendReminders(
+        {
+          alumnosConAdeudo: alumnosAdeudo,
+          mesPagado: mesSeleccionado,
+        },
+        {
+          onSuccess: () => {
+            setShowMesSelect(false);
+          },
+        }
+      );
+    }
   }
 
   return (
@@ -1415,6 +1580,11 @@ function PaymentsTable({ course, schoolId }) {
           <CardIcon>📉</CardIcon>
           <CardValue>{totalBajas}</CardValue>
           <CardLabel>Bajas</CardLabel>
+        </DashboardCard>
+        <DashboardCard>
+          <CardIcon>📈</CardIcon>
+          <CardValue>{totalAltas}</CardValue>
+          <CardLabel>Altas</CardLabel>
         </DashboardCard>
         <DashboardCard>
           <CardIcon>💵</CardIcon>
@@ -1493,6 +1663,7 @@ function PaymentsTable({ course, schoolId }) {
           </select>
           <button
             onClick={handleEnviarRecordatorios}
+            disabled={isSendingReminders}
             style={{
               marginLeft: 8,
               padding: "0.4rem 1.2rem",
@@ -1504,7 +1675,7 @@ function PaymentsTable({ course, schoolId }) {
               cursor: "pointer",
             }}
           >
-            Enviar
+            {isSendingReminders ? "Enviando..." : "Enviar"}
           </button>
           <button
             onClick={handleCerrarSelectMes}
@@ -1577,18 +1748,43 @@ function PaymentsTable({ course, schoolId }) {
                           <Menus.Button
                             icon={<HiEye />}
                             onClick={() => handleKardex(student)}
+                            disabled={isDeactivating || isReactivating}
                           >
                             Ver Kardex
                           </Menus.Button>
                           <Menus.Button
                             icon={<HiPencil />}
                             onClick={() => handleEdit(student)}
+                            disabled={isDeactivating || isReactivating}
                           >
                             Editar
                           </Menus.Button>
+
+                          {/* Show Deactivate button if student is currently Active */}
+                          {student.Activo && (
+                            <Menus.Button
+                              icon={<HiArrowDownCircle />}
+                              onClick={() => handleDeactivate(student)}
+                              disabled={isDeactivating || isReactivating}
+                            >
+                              Dar de baja
+                            </Menus.Button>
+                          )}
+                          {/* Show Reactivate button if student is currently Inactive */}
+                          {!student.Activo && (
+                            <Menus.Button
+                              icon={<HiArrowUpCircle />}
+                              onClick={() => handleReactivate(student)}
+                              disabled={isDeactivating || isReactivating}
+                            >
+                              Reactivar
+                            </Menus.Button>
+                          )}
+
                           <Menus.Button
                             icon={<HiTrash />}
                             onClick={() => handleDelete(student)}
+                            disabled={isDeactivating || isReactivating}
                           >
                             Eliminar
                           </Menus.Button>

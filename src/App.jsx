@@ -5,7 +5,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import Attendance from "./pages/Attendance";
 import Expenses from "./pages/Expenses";
 import Payments from "./pages/Payments";
-//import Register from "./pages/Register";
+import Register from "./pages/Register";
 //import Reports from "./pages/Reports";
 import Schools from "./pages/Schools";
 //import Statistics from "./pages/Statistics";
@@ -49,8 +49,8 @@ export default function App() {
             <Route path="attendance" element={<Attendance />} />
             <Route path="expenses" element={<Expenses />} />
             <Route path="payments" element={<Payments />} />
-            {/* <Route path="register" element={<Register />} />
-            <Route path="reports" element={<Reports />} /> */}
+            <Route path="register" element={<Register />} />
+            {/* <Route path="reports" element={<Reports />} /> */}
             <Route path="schools" element={<Schools />} />
             {/* <Route path="settings" element={<Settings />} />
             <Route path="statistics" element={<Statistics />} /> */}

@@ -11,6 +11,8 @@ import Heading from "../../ui/Heading";
 import { createCourse } from "../../services/apiCourses";
 import Checkbox from "../../ui/Checkbox";
 import Select from "../../ui/Select";
+import { useSchools } from "../schools/useSchools";
+import supabase from "../../services/supabase";
 
 // Basic form styling, similar to CreateEditSchoolForm
 const StyledForm = styled.form`
@@ -48,41 +50,102 @@ const dayOptions = [
 
 function CreateCourseForm({ selectedSchoolName, onCloseModal }) {
   const queryClient = useQueryClient();
+  const { data: schools = [], isLoading: loadingSchools } = useSchools();
 
   const {
     register,
     handleSubmit,
     reset,
     formState: { errors },
+    watch,
   } = useForm({
     defaultValues: {
       DiaClase: "LUNES",
       InicioCurso: "",
       FinCurso: "",
+      NombreEscuela: selectedSchoolName || "",
       Activo: true,
     },
   });
 
+  const selectedSchool = watch("NombreEscuela");
+
   const { mutate: createCourseMutate, isPending: isCreating } = useMutation({
-    mutationFn: createCourse,
+    mutationFn: async (courseData) => {
+      // Validación adicional en el frontend
+      if (!courseData.NombreEscuela) {
+        throw new Error("Debe seleccionar una escuela.");
+      }
+
+      // Validar fechas
+      const startDate = new Date(courseData.InicioCurso);
+      const endDate = new Date(courseData.FinCurso);
+      if (endDate <= startDate) {
+        throw new Error(
+          "La fecha de fin debe ser posterior a la fecha de inicio."
+        );
+      }
+
+      // Si el curso será activo, verificar si hay cursos activos y pedir confirmación
+      if (courseData.Activo) {
+        const { data: activeCourses, error: checkError } = await supabase
+          .from("CURSO")
+          .select("IDCurso, InicioCurso, FinCurso")
+          .eq("NombreEscuela", courseData.NombreEscuela)
+          .eq("Activo", true);
+
+        if (checkError) {
+          throw new Error(
+            "Error al verificar cursos activos: " + checkError.message
+          );
+        }
+
+        if (activeCourses && activeCourses.length > 0) {
+          const confirmMessage = `¡ATENCIÓN!\n\nExisten ${activeCourses.length} curso(s) activo(s) en ${courseData.NombreEscuela}.\n\nAl crear este nuevo curso activo:\n- Se desactivarán automáticamente los cursos anteriores\n- Se inactivarán todos los estudiantes de esa escuela\n- Se actualizarán las bajas del mes actual\n\n¿Está seguro de que desea continuar?`;
+
+          if (!window.confirm(confirmMessage)) {
+            throw new Error("Operación cancelada por el usuario.");
+          }
+        }
+      }
+
+      // Crear el curso (toda la lógica de desactivación está en el servicio)
+      return createCourse(courseData);
+    },
     onSuccess: () => {
-      toast.success("Nuevo curso creado exitosamente.");
+      toast.success(
+        "¡Curso creado exitosamente! Se han aplicado los cambios correspondientes."
+      );
+      // Invalidate all related queries to ensure UI updates
       queryClient.invalidateQueries({ queryKey: ["schools"] });
+      queryClient.invalidateQueries({ queryKey: ["courses"] });
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["schoolsList"] });
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
       reset();
       onCloseModal?.();
     },
     onError: (err) => {
+      if (err.message === "Operación cancelada por el usuario.") {
+        // No mostrar toast de error si el usuario canceló
+        return;
+      }
       toast.error(err.message || "No se pudo crear el curso.");
       console.error("Create course error:", err);
     },
   });
 
   function onSubmit(data) {
+    if (!data.NombreEscuela) {
+      toast.error("Debe seleccionar una escuela.");
+      return;
+    }
+
     const courseData = {
       DiaClase: data.DiaClase,
       InicioCurso: data.InicioCurso,
       FinCurso: data.FinCurso,
-      NombreEscuela: selectedSchoolName,
+      NombreEscuela: data.NombreEscuela,
       Activo: !!data.Activo,
     };
     console.log("Submitting Course Data:", courseData);
@@ -94,23 +157,57 @@ function CreateCourseForm({ selectedSchoolName, onCloseModal }) {
     onCloseModal?.();
   }
 
+  if (loadingSchools) {
+    return <SpinnerMini />;
+  }
+
   return (
     <>
       <Heading as="h2" style={{ marginBottom: "2.4rem", textAlign: "center" }}>
-        Agregar Curso a {selectedSchoolName}
+        {selectedSchoolName
+          ? `Agregar Curso a ${selectedSchoolName}`
+          : "Crear Nuevo Curso"}
       </Heading>
       <StyledForm onSubmit={handleSubmit(onSubmit)}>
         <FormGrid>
-          {/* Dia de Clase - Changed to Select */}
+          {/* Selector de Escuela */}
+          {!selectedSchoolName && (
+            <FormRow label="Escuela" error={errors?.NombreEscuela?.message}>
+              <Select
+                id="NombreEscuela"
+                disabled={isCreating}
+                {...register("NombreEscuela", {
+                  required: "La escuela es obligatoria",
+                })}
+              >
+                <option value="">Seleccionar escuela...</option>
+                {schools.map((school) => (
+                  <option
+                    key={school.NombreEscuela}
+                    value={school.NombreEscuela}
+                  >
+                    {school.NombreEscuela}
+                  </option>
+                ))}
+              </Select>
+            </FormRow>
+          )}
+
+          {/* Día de Clase */}
           <FormRow label="Día de Clase" error={errors?.DiaClase?.message}>
             <Select
               id="DiaClase"
-              options={dayOptions}
               disabled={isCreating}
               {...register("DiaClase", {
                 required: "Día de clase es obligatorio",
               })}
-            />
+            >
+              {dayOptions.map((day) => (
+                <option key={day.value} value={day.value}>
+                  {day.label}
+                </option>
+              ))}
+            </Select>
           </FormRow>
 
           {/* Inicio Curso */}
@@ -137,15 +234,38 @@ function CreateCourseForm({ selectedSchoolName, onCloseModal }) {
               disabled={isCreating}
               {...register("FinCurso", {
                 required: "Fecha de fin es obligatoria",
+                validate: (value) => {
+                  const startDate = watch("InicioCurso");
+                  if (startDate && value) {
+                    return (
+                      new Date(value) > new Date(startDate) ||
+                      "La fecha de fin debe ser posterior a la fecha de inicio"
+                    );
+                  }
+                  return true;
+                },
               })}
               style={{ width: "100%" }}
             />
           </FormRow>
 
-          {/* Activo Checkbox */}
+          {/* Activo Checkbox con advertencia */}
           <FormRow orientation="horizontal">
             <Checkbox id="Activo" disabled={isCreating} {...register("Activo")}>
               ¿Curso activo?
+              {selectedSchool && (
+                <small
+                  style={{
+                    display: "block",
+                    color: "var(--color-orange-600)",
+                    marginTop: "0.4rem",
+                  }}
+                >
+                  ⚠️ Si activas este curso, se desactivarán automáticamente
+                  todos los cursos activos de {selectedSchool} y sus
+                  estudiantes.
+                </small>
+              )}
             </Checkbox>
           </FormRow>
         </FormGrid>

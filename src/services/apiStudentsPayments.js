@@ -46,36 +46,23 @@ export async function getPaymentsByStudentsAndCourse(numeroControls, courseId) {
 }
 
 /**
- * Obtiene pagos de un curso específico, incluyendo de estudiantes que
- * se dieron de baja DURANTE ese curso (que tienen pagos registrados)
+ * Obtiene TODOS los pagos de un curso específico.
+ * IMPORTANTE: Los pagos NUNCA se excluyen de las estadísticas, incluso
+ * si el estudiante se da de baja después, porque el dinero ya fue cobrado.
  */
 export async function getAllPaymentsByCourse(courseId, schoolName) {
   if (!courseId || !schoolName) return [];
 
-  // Obtener todos los estudiantes que alguna vez pertenecieron a esta escuela
-  // (activos e inactivos) que tienen pagos en este curso
-  const { data: studentsWithPayments, error: studentsError } = await supabase
-    .from("ALUMNO")
-    .select("NumeroControl")
-    .eq("NombreEscuela", schoolName);
-
-  if (studentsError) {
-    console.error("Error fetching students for payments:", studentsError);
-    throw new Error("No se pudieron cargar los estudiantes");
-  }
-
-  if (!studentsWithPayments?.length) return [];
-
-  const numeroControls = studentsWithPayments.map((s) => s.NumeroControl);
-
-  // Ahora obtener todos los pagos del curso para estos estudiantes
+  // Estrategia simplificada: obtener TODOS los pagos del curso
+  // y filtrar por escuela via JOIN con ALUMNO
   const { data, error } = await supabase
     .from("PAGO")
     .select(
-      "NumeroRecibo,NumeroControl,IDCurso,MesPagado,Monto,Liquidado,FechaHora,MetodoPago,Nota,CantidadBeca,PorcentajeBeca,Abono"
+      `NumeroRecibo,NumeroControl,IDCurso,MesPagado,Monto,Liquidado,FechaHora,MetodoPago,Nota,CantidadBeca,PorcentajeBeca,Abono,
+       ALUMNO!inner(NombreEscuela)`
     )
     .eq("IDCurso", courseId)
-    .in("NumeroControl", numeroControls);
+    .eq("ALUMNO.NombreEscuela", schoolName);
 
   if (error) {
     console.error("Error fetching all payments by course:", error);

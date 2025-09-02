@@ -64,7 +64,12 @@ function CourseCreator({ schoolId }) {
     mutationFn: createCourse,
     onSuccess: () => {
       toast.success("Nuevo curso creado con éxito.");
-      queryClient.invalidateQueries({ queryKey: ["courses", schoolId] });
+      // Invalidate all related queries to ensure UI updates
+      queryClient.invalidateQueries({ queryKey: ["schools"] });
+      queryClient.invalidateQueries({ queryKey: ["courses"] });
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["schoolsList"] });
+      queryClient.invalidateQueries({ queryKey: ["payments"] });
       reset();
     },
     onError: (err) => {
@@ -73,11 +78,22 @@ function CourseCreator({ schoolId }) {
   });
 
   function onSubmit(data) {
-    console.log("Submitting course data:", {
+    // Validación de fechas en el frontend
+    const startDate = new Date(data.InicioCurso);
+    const endDate = new Date(data.FinCurso);
+    if (endDate <= startDate) {
+      toast.error("La fecha de fin debe ser posterior a la fecha de inicio.");
+      return;
+    }
+
+    const courseData = {
       ...data,
       NombreEscuela: schoolId,
-    });
-    mutate({ ...data, NombreEscuela: schoolId });
+      Activo: true, // Por defecto, los cursos creados desde este componente son activos
+    };
+
+    console.log("Submitting course data:", courseData);
+    mutate(courseData);
   }
 
   return (
@@ -110,7 +126,15 @@ function CourseCreator({ schoolId }) {
               disabled={isCreating}
               {...register("FinCurso", {
                 required: "La fecha de fin es obligatoria",
-                // validate: (value, formValues) => value >= formValues.InicioCurso || "La fecha de fin debe ser posterior a la de inicio"
+                validate: (value, formValues) => {
+                  if (formValues.InicioCurso && value) {
+                    return (
+                      new Date(value) > new Date(formValues.InicioCurso) ||
+                      "La fecha de fin debe ser posterior a la fecha de inicio"
+                    );
+                  }
+                  return true;
+                },
               })}
             />
             {errors?.FinCurso && <Error>{errors.FinCurso.message}</Error>}

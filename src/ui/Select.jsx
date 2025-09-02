@@ -17,14 +17,16 @@ const StyledSelect = styled.select`
 `;
 
 const Select = React.forwardRef(
-  ({ options, value, onChange, ...props }, ref) => {
+  ({ options = [], value, onChange, children, ...props }, ref) => {
     return (
       <StyledSelect ref={ref} value={value} onChange={onChange} {...props}>
-        {options.map((option) => (
-          <option value={option.value} key={option.value}>
-            {option.label}
-          </option>
-        ))}
+        {children
+          ? children
+          : options.map((option) => (
+              <option value={option.value} key={option.value}>
+                {option.label}
+              </option>
+            ))}
       </StyledSelect>
     );
   }

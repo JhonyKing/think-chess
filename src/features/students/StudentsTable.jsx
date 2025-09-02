@@ -2,15 +2,11 @@ import styled from "styled-components";
 import { useState, useMemo, useContext } from "react";
 import Spinner from "../../ui/Spinner";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  getStudents,
-  getLatestNumeroControlForCurrentYear,
-  deleteStudent,
-} from "../../services/apiStudents";
+import { getStudents, deleteStudent } from "../../services/apiStudents";
 import StudentRow from "./StudentRow";
 import Input from "../../ui/Input";
 import Button from "../../ui/Button";
-import SpinnerMini from "../../ui/SpinnerMini";
+
 import { toast } from "react-hot-toast";
 import Modal, { ModalContext } from "../../ui/Modal";
 import CreateStudentForm from "./CreateStudentForm";
@@ -76,8 +72,9 @@ function StudentsTable() {
   const [selectedStudentForKardex, setSelectedStudentForKardex] =
     useState(null);
   const [studentToDelete, setStudentToDelete] = useState(null);
-  const [nextNumeroControl, setNextNumeroControl] = useState("");
-  const [isGeneratingNum, setIsGeneratingNum] = useState(false);
+  // Ya no necesitamos estos estados - el número se genera automáticamente
+  // const [nextNumeroControl, setNextNumeroControl] = useState("");
+  // const [isGeneratingNum, setIsGeneratingNum] = useState(false);
 
   const [filterValue, setFilterValue] = useState("");
   const [sortConfig, setSortConfig] = useState({
@@ -162,32 +159,14 @@ function StudentsTable() {
     });
   }, [filteredStudents, sortConfig]);
 
-  const handlePrepareAdd = async () => {
-    setIsGeneratingNum(true);
-    try {
-      const latestNum = await getLatestNumeroControlForCurrentYear();
-      const currentYear = new Date().getFullYear().toString().slice(-2);
-      const prefix = `${currentYear}100`;
-      let nextSeqNum = 1;
-      if (latestNum && latestNum.startsWith(prefix)) {
-        const lastSeq = parseInt(latestNum.slice(prefix.length), 10);
-        if (!isNaN(lastSeq)) nextSeqNum = lastSeq + 1;
-      }
-      const nextSeqStr = nextSeqNum.toString().padStart(3, "0");
-      setNextNumeroControl(`${prefix}${nextSeqStr}`);
-      setStudentToEdit(null);
-      setSelectedStudentForKardex(null);
-      setStudentToDelete(null);
-    } catch (err) {
-      toast.error(err.message || "Error al generar número de control.");
-      console.error("Failed to generate NumeroControl:", err);
-    } finally {
-      setIsGeneratingNum(false);
-    }
+  const handlePrepareAdd = () => {
+    // Ya no necesitamos generar el número aquí - se hace automáticamente
+    setStudentToEdit(null);
+    setSelectedStudentForKardex(null);
+    setStudentToDelete(null);
   };
 
   const handlePrepareEdit = (student) => {
-    setNextNumeroControl("");
     setStudentToEdit(student);
     setSelectedStudentForKardex(null);
     setStudentToDelete(null);
@@ -209,7 +188,6 @@ function StudentsTable() {
   const handleCloseAndResetState = () => {
     setStudentToEdit(null);
     setSelectedStudentForKardex(null);
-    setNextNumeroControl("");
     setStudentToDelete(null);
   };
 
@@ -245,15 +223,8 @@ function StudentsTable() {
             </Button>
           </Modal.Open>
           <Modal.Open opens="student-form">
-            <Button onClick={handlePrepareAdd} disabled={isGeneratingNum}>
-              {isGeneratingNum ? (
-                <SpinnerMini />
-              ) : (
-                <>
-                  <IoMdAdd style={{ marginRight: "0.4rem" }} /> Agregar
-                  Estudiante
-                </>
-              )}
+            <Button onClick={handlePrepareAdd}>
+              <IoMdAdd style={{ marginRight: "0.4rem" }} /> Agregar Estudiante
             </Button>
           </Modal.Open>
         </div>
@@ -393,7 +364,6 @@ function StudentsTable() {
       <Modal.Window name="student-form">
         <CreateStudentForm
           studentToEdit={studentToEdit}
-          numeroControlProp={nextNumeroControl}
           onCloseModal={handleCloseAndResetState}
         />
       </Modal.Window>

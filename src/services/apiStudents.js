@@ -1,5 +1,11 @@
 import toast from "react-hot-toast";
 import supabase, { supabaseUrl } from "./supabase";
+import {
+  getCurrentMonth,
+  getCurrentMonthField,
+  getCurrentISOString,
+  getCurrentYear,
+} from "../utils/dateUtils";
 
 // Helper function to normalize strings for nick generation
 // Removes accents, converts to lowercase, and removes spaces
@@ -107,6 +113,37 @@ export async function getLatestNumeroControlForCurrentYear() {
 }
 
 /**
+ * Generates the next NumeroControl for the current year automatically.
+ * Format: YYMMM### where:
+ * - YY: last two digits of current year
+ * - MMM: fixed "100"
+ * - ###: incremental sequence of 3 digits (001, 002, etc.)
+ * @returns {Promise<string>} The next NumeroControl
+ */
+export async function generateNextNumeroControl() {
+  const latestControlNumber = await getLatestNumeroControlForCurrentYear();
+
+  // Generate the next number
+  const currentYear = new Date().getFullYear().toString().slice(-2);
+  const prefix = `${currentYear}100`;
+
+  let nextSequenceNumber = 1;
+
+  if (latestControlNumber && latestControlNumber.startsWith(prefix)) {
+    // Extract sequence from the last number
+    const lastSequence = parseInt(latestControlNumber.slice(prefix.length), 10);
+    if (!isNaN(lastSequence)) {
+      nextSequenceNumber = lastSequence + 1;
+    }
+  }
+
+  // Format with leading zeros (3 digits)
+  const sequenceString = nextSequenceNumber.toString().padStart(3, "0");
+
+  return `${prefix}${sequenceString}`;
+}
+
+/**
  * Creates a new student or edits an existing one, handling image upload and nick generation.
  * @param {object} newStudentData - Data for the student.
  * @param {string} [id] - Optional ID (NumeroControl) for editing.
@@ -181,6 +218,19 @@ export async function createEditStudent(newStudentData, id) {
 
   // A) CREATE Specific Logic
   if (!id) {
+    // Generate NumeroControl automatically if not provided
+    if (!studentDataForDB.NumeroControl) {
+      try {
+        studentDataForDB.NumeroControl = await generateNextNumeroControl();
+        console.log("Generated NumeroControl:", studentDataForDB.NumeroControl);
+      } catch (error) {
+        console.error("Error generating NumeroControl:", error);
+        throw new Error(
+          "No se pudo generar el número de control automáticamente."
+        );
+      }
+    }
+
     // Generate Nick and Password only on create
     try {
       const uniqueNick = await generateUniqueNick(
@@ -195,13 +245,7 @@ export async function createEditStudent(newStudentData, id) {
     }
 
     // Add FechaInscripcion automatically on create
-    studentDataForDB.FechaInscripcion = new Date().toISOString();
-    // Ensure required fields like NumeroControl are present if not editing
-    if (!studentDataForDB.NumeroControl) {
-      // This should ideally be handled by form validation + generation logic
-      console.error("NumeroControl missing during create operation");
-      throw new Error("Falta el Número de Control para crear el alumno.");
-    }
+    studentDataForDB.FechaInscripcion = getCurrentISOString();
     // Remove FechaBaja explicitly if creating
     delete studentDataForDB.FechaBaja;
 
@@ -261,17 +305,100 @@ export async function createEditStudent(newStudentData, id) {
     );
   }
 
+  // 5. Update ALTAS counter if creating a new student
+  if (operationType === "insert") {
+    console.log("🚨 CREATE STUDENT - INCREMENTANDO ALTAS:");
+    console.log("📅 Año:", getCurrentYear());
+    console.log("📅 Mes (0-11):", getCurrentMonth());
+    console.log("📅 Campo BD:", getCurrentMonthField("Altas"));
+
+    // Get current active course for the school to update altas counter
+    const { data: courseData, error: courseError } = await supabase
+      .from("CURSO")
+      .select(
+        "IDCurso, AltasEnero, AltasFebrero, AltasMarzo, AltasAbril, AltasMayo, AltasJunio, AltasJulio, AltasAgosto, AltasSeptiembre, AltasOctubre, AltasNoviembre, AltasDiciembre"
+      )
+      .eq("NombreEscuela", studentDataForDB.NombreEscuela)
+      .eq("Activo", true)
+      .single();
+
+    if (courseError) {
+      console.error("Error fetching active course for altas:", courseError);
+      // Don't throw here - student was already created successfully
+      toast.error(
+        "Alumno creado, pero no se pudo actualizar el contador de altas."
+      );
+    } else {
+      // Update altas counter in CURSO table
+      const currentMonthField = getCurrentMonthField("Altas");
+      const currentCount = courseData[currentMonthField] || 0;
+
+      const { error: courseUpdateError } = await supabase
+        .from("CURSO")
+        .update({ [currentMonthField]: currentCount + 1 })
+        .eq("IDCurso", courseData.IDCurso);
+
+      if (courseUpdateError) {
+        console.error(
+          "Error updating course altas counter:",
+          courseUpdateError
+        );
+        // Don't throw here - student was already created successfully
+        toast.error(
+          "Alumno creado, pero no se pudo actualizar el contador de altas."
+        );
+      }
+    }
+  }
+
   return data;
 }
 
 /**
  * Deactivates a student by setting FechaBaja and Activo = false.
+ * Also increments the corresponding month counter in CURSO table.
  * @param {string} id - NumeroControl of the student to deactivate.
  */
 export async function deactivateStudent(id) {
+  // CRÍTICO: Usar funciones de fecha correctas
+  console.log("🚨 DEACTIVATE STUDENT - FECHA ACTUAL REAL:");
+  console.log("📅 Año:", getCurrentYear());
+  console.log("📅 Mes (0-11):", getCurrentMonth());
+  console.log("📅 Campo BD:", getCurrentMonthField("Bajas"));
+
+  // First get student info to know which school and course to update
+  const { data: studentData, error: studentError } = await supabase
+    .from("ALUMNO")
+    .select("NombreEscuela")
+    .eq("NumeroControl", id)
+    .single();
+
+  if (studentError) {
+    console.error("Error fetching student for deactivate:", studentError);
+    toast.error("Error al obtener información del alumno.");
+    throw new Error("No se pudo obtener información del alumno.");
+  }
+
+  // Get current active course for the school
+  const { data: courseData, error: courseError } = await supabase
+    .from("CURSO")
+    .select(
+      "IDCurso, BajasEnero, BajasFebrero, BajasMarzo, BajasAbril, BajasMayo, BajasJunio, BajasJulio, BajasAgosto, BajasSeptiembre, BajasOctubre, BajasNoviembre, BajasDiciembre"
+    )
+    .eq("NombreEscuela", studentData.NombreEscuela)
+    .eq("Activo", true)
+    .single();
+
+  if (courseError) {
+    console.error("Error fetching active course:", courseError);
+    toast.error("Error al obtener curso activo.");
+    throw new Error("No se pudo obtener el curso activo.");
+  }
+
+  // Deactivate student
   const { data, error } = await supabase
     .from("ALUMNO")
-    .update({ FechaBaja: new Date().toISOString(), Activo: false })
+    .update({ FechaBaja: getCurrentISOString(), Activo: false })
     .eq("NumeroControl", id)
     .select() // Select to confirm the update
     .single();
@@ -280,6 +407,23 @@ export async function deactivateStudent(id) {
     console.error("Student deactivate error:", error);
     toast.error("Error al dar de baja al alumno.");
     throw new Error("No se pudo dar de baja al alumno.");
+  }
+
+  // Update bajas counter in CURSO table
+  const currentMonthField = getCurrentMonthField("Bajas");
+  const currentCount = courseData[currentMonthField] || 0;
+
+  const { error: courseUpdateError } = await supabase
+    .from("CURSO")
+    .update({ [currentMonthField]: currentCount + 1 })
+    .eq("IDCurso", courseData.IDCurso);
+
+  if (courseUpdateError) {
+    console.error("Error updating course bajas counter:", courseUpdateError);
+    // Don't throw here - student was already deactivated successfully
+    toast.error(
+      "Alumno dado de baja, pero no se pudo actualizar el contador de bajas."
+    );
   }
 
   return data;
@@ -319,9 +463,46 @@ export async function deactivateStudentsBySchool(schoolName) {
 
 /**
  * Reactivates a student by setting FechaBaja to null and Activo = true.
+ * Also increments the corresponding month counter in CURSO table.
  * @param {string} id - NumeroControl of the student to reactivate.
  */
 export async function reactivateStudent(id) {
+  // CRÍTICO: Usar funciones de fecha correctas
+  console.log("🚨 REACTIVATE STUDENT - FECHA ACTUAL REAL:");
+  console.log("📅 Año:", getCurrentYear());
+  console.log("📅 Mes (0-11):", getCurrentMonth());
+  console.log("📅 Campo BD:", getCurrentMonthField("Altas"));
+
+  // First get student info to know which school and course to update
+  const { data: studentData, error: studentError } = await supabase
+    .from("ALUMNO")
+    .select("NombreEscuela")
+    .eq("NumeroControl", id)
+    .single();
+
+  if (studentError) {
+    console.error("Error fetching student for reactivate:", studentError);
+    toast.error("Error al obtener información del alumno.");
+    throw new Error("No se pudo obtener información del alumno.");
+  }
+
+  // Get current active course for the school
+  const { data: courseData, error: courseError } = await supabase
+    .from("CURSO")
+    .select(
+      "IDCurso, AltasEnero, AltasFebrero, AltasMarzo, AltasAbril, AltasMayo, AltasJunio, AltasJulio, AltasAgosto, AltasSeptiembre, AltasOctubre, AltasNoviembre, AltasDiciembre"
+    )
+    .eq("NombreEscuela", studentData.NombreEscuela)
+    .eq("Activo", true)
+    .single();
+
+  if (courseError) {
+    console.error("Error fetching active course:", courseError);
+    toast.error("Error al obtener curso activo.");
+    throw new Error("No se pudo obtener el curso activo.");
+  }
+
+  // Reactivate student
   const { data, error } = await supabase
     .from("ALUMNO")
     .update({ FechaBaja: null, Activo: true })
@@ -333,6 +514,23 @@ export async function reactivateStudent(id) {
     console.error("Student reactivate error:", error);
     toast.error("Error al reactivar al alumno.");
     throw new Error("No se pudo reactivar al alumno.");
+  }
+
+  // Update altas counter in CURSO table
+  const currentMonthField = getCurrentMonthField("Altas");
+  const currentCount = courseData[currentMonthField] || 0;
+
+  const { error: courseUpdateError } = await supabase
+    .from("CURSO")
+    .update({ [currentMonthField]: currentCount + 1 })
+    .eq("IDCurso", courseData.IDCurso);
+
+  if (courseUpdateError) {
+    console.error("Error updating course altas counter:", courseUpdateError);
+    // Don't throw here - student was already reactivated successfully
+    toast.error(
+      "Alumno reactivado, pero no se pudo actualizar el contador de altas."
+    );
   }
 
   return data;

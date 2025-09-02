@@ -13,6 +13,7 @@ import { getProfessors } from "../../services/apiProfessors";
 import FileInput from "../../ui/FileInput";
 import Select from "../../ui/Select";
 import SpinnerMini from "../../ui/SpinnerMini";
+import { useControlNumber } from "./useControlNumber";
 
 const StyledForm = styled(Form)`
   width: 100%;
@@ -106,6 +107,13 @@ function CreateStudentForm({
   } = currentStudent;
   const isEditSession = Boolean(editNumeroControl);
 
+  // Hook para generar número de control automáticamente (solo para nuevos estudiantes)
+  const {
+    nextControlNumber,
+    isLoading: isGeneratingControlNumber,
+    error: controlNumberError,
+  } = useControlNumber();
+
   const [imagePreview, setImagePreview] = useState(existingImageUrl || null);
 
   const {
@@ -128,6 +136,7 @@ function CreateStudentForm({
           Activo: true,
           PorcentajeBeca: 0,
           NombreEscuela: "",
+          NumeroControl: "", // Se generará automáticamente
         },
   });
 
@@ -148,11 +157,19 @@ function CreateStudentForm({
     }
   }, [imageField, isEditSession, existingImageUrl]);
 
+  // Efecto para establecer el número de control generado automáticamente
   useEffect(() => {
-    if (!isEditSession && numeroControlProp) {
+    if (!isEditSession && nextControlNumber) {
+      setValue("NumeroControl", nextControlNumber);
+    }
+  }, [nextControlNumber, isEditSession, setValue]);
+
+  // Mantener compatibilidad con el prop numeroControlProp (legacy)
+  useEffect(() => {
+    if (!isEditSession && numeroControlProp && !nextControlNumber) {
       setValue("NumeroControl", numeroControlProp);
     }
-  }, [numeroControlProp, isEditSession, setValue]);
+  }, [numeroControlProp, isEditSession, setValue, nextControlNumber]);
 
   // Actualizar el formulario cuando lleguen datos frescos del estudiante
   useEffect(() => {
@@ -228,7 +245,8 @@ function CreateStudentForm({
     isEditing ||
     isLoadingSchools ||
     isLoadingProfessors ||
-    isLoadingStudents;
+    isLoadingStudents ||
+    (!isEditSession && isGeneratingControlNumber);
 
   function onSubmit(data) {
     console.log("onSubmit called with data:", data);
@@ -251,7 +269,8 @@ function CreateStudentForm({
       delete studentData.NumeroControl;
       editStudent(studentData);
     } else {
-      studentData.NumeroControl = numeroControlProp || data.NumeroControl;
+      // No incluir NumeroControl en los datos - se generará automáticamente en el servicio
+      delete studentData.NumeroControl;
       if (studentData.Activo === undefined) studentData.Activo = true;
       createStudent(studentData);
     }
@@ -317,24 +336,42 @@ function CreateStudentForm({
     <StyledForm onSubmit={handleSubmit(onSubmit, onError)}>
       <FormGrid $columns="1fr">
         <Field>
-          <Label htmlFor="NumeroControl">Numero de Control</Label>
+          <Label htmlFor="NumeroControl">Número de Control</Label>
           <Input
             type="text"
             id="NumeroControl"
-            disabled={isEditSession}
-            readOnly={isEditSession}
-            {...register("NumeroControl", {
-              required: "Numero de Control es requerido",
-            })}
+            disabled={true} // Siempre deshabilitado - se genera automáticamente
+            readOnly={true} // Siempre solo lectura
+            {...register("NumeroControl")}
             style={{
-              backgroundColor: isEditSession
-                ? "var(--color-grey-100)"
-                : "inherit",
-              cursor: isEditSession ? "not-allowed" : "auto",
+              backgroundColor: "var(--color-grey-100)",
+              cursor: "not-allowed",
             }}
+            placeholder={
+              isEditSession
+                ? ""
+                : isGeneratingControlNumber
+                ? "Generando número..."
+                : nextControlNumber || "Se generará automáticamente"
+            }
           />
-          {errors.NumeroControl && (
-            <ErrorSpan>{errors.NumeroControl.message}</ErrorSpan>
+          {controlNumberError && (
+            <ErrorSpan>
+              Error al generar número de control: {controlNumberError.message}
+            </ErrorSpan>
+          )}
+          {!isEditSession && (
+            <span
+              style={{
+                fontSize: "1.2rem",
+                color: "var(--color-grey-600)",
+                marginTop: "0.4rem",
+                display: "block",
+              }}
+            >
+              El número de control se genera automáticamente con el formato:{" "}
+              {new Date().getFullYear().toString().slice(-2)}100###
+            </span>
           )}
         </Field>
       </FormGrid>

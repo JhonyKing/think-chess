@@ -55,15 +55,24 @@ function SchoolsContent() {
     queryFn: getSchools,
   });
 
-  // Memoize filtered school lists
-  const activeSchools = useMemo(
-    () => schoolsData?.filter((school) => school.Activo) || [],
-    [schoolsData]
-  );
-  const inactiveSchools = useMemo(
-    () => schoolsData?.filter((school) => !school.Activo) || [],
-    [schoolsData]
-  );
+  // Memoize filtered school lists using both DB field and actual course status
+  const activeSchools = useMemo(() => {
+    if (!schoolsData) return [];
+    return schoolsData.filter((school) => {
+      // Use both criteria: DB field AND actual active courses
+      const hasActiveCourse = school.CURSO?.some((course) => course.Activo);
+      return school.Activo || hasActiveCourse; // Either DB says active OR has active courses
+    });
+  }, [schoolsData]);
+
+  const inactiveSchools = useMemo(() => {
+    if (!schoolsData) return [];
+    return schoolsData.filter((school) => {
+      // Only inactive if BOTH: DB says inactive AND no active courses
+      const hasActiveCourse = school.CURSO?.some((course) => course.Activo);
+      return !school.Activo && !hasActiveCourse;
+    });
+  }, [schoolsData]);
 
   const handleSelectSchool = (school) => {
     setSelectedSchool((current) => {

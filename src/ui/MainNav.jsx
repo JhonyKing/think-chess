@@ -8,9 +8,9 @@ import {
   HiOutlineCircleStack,
   /* HiOutlineChartBar,
   HiOutlineCog6Tooth,
-  HiOutlineDocumentChartBar,
+  HiOutlineDocumentChartBar, */
   HiOutlineFolderPlus,
-  HiOutlineHome, */
+  /* HiOutlineHome, */
   HiOutlineTruck,
   HiOutlineUsers,
 } from "react-icons/hi2";
@@ -86,13 +86,13 @@ function MainNav() {
             <HiOutlineBanknotes /> Pagos
           </StyledNavLink>
         </li>
-        {/*  <li>
+        <li>
           <StyledNavLink to="/register">
             <HiOutlineFolderPlus />
-            Registro
+            Registros
           </StyledNavLink>
-        </li> 
-        <li>
+        </li>
+        {/*<li>
           <StyledNavLink to="/reports">
             <HiOutlineDocumentChartBar />
             Reportes

@@ -2,9 +2,12 @@ import styled from "styled-components";
 import Button from "../../ui/Button";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "react-hot-toast";
 import { deletePago } from "../../services/apiPayments";
+import { useEmailTemplateByType } from "../emails/useEmailTemplates";
+import { useSendEmailWithTemplate } from "../emails/useSendEmail";
+import { processEmailTemplate } from "../../services/apiEmailService";
 
 const ModalContent = styled.div`
   padding: 2.4rem 2rem;
@@ -54,8 +57,34 @@ function PaymentReceiptModal({
   const [showDisculpasModal, setShowDisculpasModal] = useState(false);
   const [correoEditado, setCorreoEditado] = useState("");
   const [enviandoCorreo, setEnviandoCorreo] = useState(false);
+  const [currentTemplateType, setCurrentTemplateType] = useState("");
+
+  // Hooks para plantillas y envío de correos (deben estar antes del early return)
+  const { template } = useEmailTemplateByType(currentTemplateType);
+  const { sendEmail, isSending } = useSendEmailWithTemplate();
+
+  // Efecto para procesar plantilla cuando se carga (debe estar antes del early return)
+  useEffect(() => {
+    if (template && showCorreoModal && payment) {
+      const paymentData = {
+        MesPagado: payment.MesPagado,
+        Monto: payment.Monto,
+        SaldoPendiente: payment.SaldoPendiente,
+        FechaHora: payment.FechaHora,
+        NumeroRecibo: payment.NumeroRecibo,
+      };
+
+      const emailContent = processEmailTemplate(template, {
+        nombreAlumno: payment.NombreAlumno || payment.NumeroControl,
+        ...paymentData,
+      });
+
+      setCorreoEditado(emailContent.contenido);
+    }
+  }, [template, showCorreoModal, payment]);
 
   if (!payment) return null;
+
   // Formatear la fecha de forma humana en español
   let fechaFormateada = "-";
   if (payment.FechaHora) {
@@ -73,8 +102,8 @@ function PaymentReceiptModal({
     }
   }
 
-  // Plantillas simuladas (reemplazar por fetch real a PLANTILLADECORREO)
-  const plantillas = {
+  // Plantillas por defecto como fallback
+  const plantillasDefault = {
     agradecimiento:
       "Estimado/a {{NOMBRE}},\n\nGracias por su pago correspondiente al mes de {{MES}}.\n\nSaludos,\nAdministración",
     abono:
@@ -115,24 +144,63 @@ function PaymentReceiptModal({
     if (onCloseModal) onCloseModal();
   }
   function handleOpenCorreo(tipo) {
-    let plantilla = plantillas[tipo || tipoCorreo] || "";
-    let correo = plantilla
-      .replace("{{NOMBRE}}", payment.NombreAlumno || payment.NumeroControl)
-      .replace("{{MES}}", payment.MesPagado)
-      .replace("{{MONTO}}", payment.Monto?.toFixed(2) || "0.00")
-      .replace("{{SALDO}}", payment.SaldoPendiente?.toFixed(2) || "0.00");
-    setCorreoEditado(correo);
+    setCurrentTemplateType(tipo || tipoCorreo);
+
+    // Si no hay plantilla en BD, usar plantilla por defecto
+    if (!template) {
+      let plantilla = plantillasDefault[tipo || tipoCorreo] || "";
+      let correo = plantilla
+        .replace("{{NOMBRE}}", payment.NombreAlumno || payment.NumeroControl)
+        .replace("{{MES}}", payment.MesPagado)
+        .replace("{{MONTO}}", payment.Monto?.toFixed(2) || "0.00")
+        .replace("{{SALDO}}", payment.SaldoPendiente?.toFixed(2) || "0.00");
+      setCorreoEditado(correo);
+    }
+
     setShowCorreoModal(true);
   }
   async function handleSendCorreo() {
-    setEnviandoCorreo(true);
-    // Aquí deberías conectar con el API de IONOS WEBMAIL
-    toast.success("Correo enviado (simulado)");
-    setShowCorreoModal(false);
-    setEnviandoCorreo(false);
-    if (onDeleted) onDeleted();
-    if (onSendCorreo) onSendCorreo();
-    if (onCloseModal) onCloseModal();
+    try {
+      setEnviandoCorreo(true);
+
+      const alumnoData = {
+        Nombre: payment.NombreAlumno,
+        NumeroControl: payment.NumeroControl,
+        Correo: payment.Correo || payment.CorreoAlumno,
+        NombreEscuela: payment.NombreEscuela,
+      };
+
+      const paymentData = {
+        MesPagado: payment.MesPagado,
+        Monto: payment.Monto,
+        SaldoPendiente: payment.SaldoPendiente,
+        FechaHora: payment.FechaHora,
+        NumeroRecibo: payment.NumeroRecibo,
+        Correo: payment.Correo || payment.CorreoAlumno,
+      };
+
+      // Verificar que el alumno tenga correo
+      if (!alumnoData.Correo) {
+        toast.error("El alumno no tiene correo electrónico registrado");
+        setEnviandoCorreo(false);
+        return;
+      }
+
+      await sendEmail({
+        tipoPlantilla: currentTemplateType,
+        alumnoData,
+        paymentData,
+      });
+
+      setShowCorreoModal(false);
+      if (onDeleted) onDeleted();
+      if (onSendCorreo) onSendCorreo();
+      if (onCloseModal) onCloseModal();
+    } catch (error) {
+      console.error("Error al enviar correo:", error);
+    } finally {
+      setEnviandoCorreo(false);
+    }
   }
   function handleCloseCorreo() {
     setShowCorreoModal(false);
@@ -276,9 +344,9 @@ function PaymentReceiptModal({
               type="button"
               variation="primary"
               onClick={handleSendCorreo}
-              disabled={enviandoCorreo}
+              disabled={enviandoCorreo || isSending}
             >
-              {enviandoCorreo ? "Enviando..." : "Enviar correo"}
+              {enviandoCorreo || isSending ? "Enviando..." : "Enviar correo"}
             </Button>
           </Footer>
         </div>

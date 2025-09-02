@@ -7,6 +7,11 @@ import { format } from "date-fns"; // For formatting dates
 import { es } from "date-fns/locale"; // Spanish locale
 import Button from "../../ui/Button"; // Import Button
 import { IoMdAdd } from "react-icons/io"; // Import Add icon
+import Menus from "../../ui/Menus";
+import { HiPencil, HiTrash } from "react-icons/hi2";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { finalizeCourse } from "../../services/apiCourses";
+import { toast } from "react-hot-toast";
 
 // Styled components for Course Row items (can be simple divs or specific styles)
 const CourseDetail = styled.div`
@@ -30,6 +35,26 @@ const CourseHeaderContainer = styled.div`
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.6rem; /* Add space below header */
+`;
+
+const StatusBadge = styled.span`
+  display: inline-block;
+  padding: 0.2rem 0.8rem;
+  border-radius: var(--border-radius-sm);
+  font-size: 1.1rem;
+  font-weight: 500;
+  text-transform: uppercase;
+
+  ${(props) =>
+    props.$active
+      ? `
+        background-color: var(--color-green-100);
+        color: var(--color-green-700);
+      `
+      : `
+        background-color: var(--color-red-100);
+        color: var(--color-red-700);
+      `}
 `;
 
 // Helper function to format dates safely
@@ -65,6 +90,22 @@ function CourseList({
   onSelectCourse,
   selectedCourseId,
 }) {
+  const queryClient = useQueryClient();
+
+  const { mutate: handleFinalizeCourse, isLoading: isFinalizingCourse } =
+    useMutation({
+      mutationFn: finalizeCourse,
+      onSuccess: () => {
+        toast.success("Curso finalizado exitosamente");
+        queryClient.invalidateQueries({ queryKey: ["schools"] });
+        queryClient.invalidateQueries({ queryKey: ["courses"] });
+        queryClient.invalidateQueries({ queryKey: ["students"] });
+      },
+      onError: (error) => {
+        toast.error(error.message || "Error al finalizar el curso");
+      },
+    });
+
   // If parent is loading schools, show a spinner or minimal message
   if (isLoading && !selectedSchool) {
     return <Spinner />; // Or null, or a placeholder message
@@ -110,43 +151,99 @@ function CourseList({
           Esta escuela no tiene cursos registrados.
         </Empty>
       ) : (
-        <TableContainer>
-          {/* Define columns: Dia, Inicio, Fin */}
-          <Table columns="1fr 1fr 1fr">
-            {" "}
-            {/* Adjusted to 3 columns */}
-            <Table.Header>
-              {/* Removed Nombre Curso Header */}
-              <div>Día</div>
-              <div>Inicio</div>
-              <div>Fin</div>
-            </Table.Header>
-            <Table.Body
-              data={courses}
-              render={(course) => {
-                const isSelected =
-                  String(course.IDCurso) === String(selectedCourseId);
-                return (
-                  <Table.Row key={course.IDCurso} isSelected={isSelected}>
-                    <CourseDetail
-                      onClick={() => handleRowClick(course)}
-                      style={{ cursor: "pointer" }}
-                      title={`Seleccionar curso ID: ${course.IDCurso}`}
-                    >
-                      {course.DiaClase || "-"}
-                    </CourseDetail>
-                    <CourseDetail>
-                      {formatCourseDate(course.InicioCurso)}
-                    </CourseDetail>
-                    <CourseDetail>
-                      {formatCourseDate(course.FinCurso)}
-                    </CourseDetail>
-                  </Table.Row>
-                );
-              }}
-            />
-          </Table>
-        </TableContainer>
+        <Menus>
+          <TableContainer>
+            {/* Define columns: Dia, Inicio, Fin, Estado, Acciones */}
+            <Table columns="1fr 1fr 1fr 1fr 0.5fr">
+              <Table.Header>
+                <div>Día</div>
+                <div>Inicio</div>
+                <div>Fin</div>
+                <div>Estado</div>
+                <div>Acciones</div>
+              </Table.Header>
+              <Table.Body
+                data={courses}
+                render={(course) => {
+                  const isSelected =
+                    String(course.IDCurso) === String(selectedCourseId);
+                  const isActive = course.Activo;
+
+                  return (
+                    <Table.Row key={course.IDCurso} isSelected={isSelected}>
+                      <CourseDetail
+                        onClick={() => handleRowClick(course)}
+                        style={{ cursor: "pointer" }}
+                        title={`Seleccionar curso ID: ${course.IDCurso}`}
+                      >
+                        {course.DiaClase || "-"}
+                      </CourseDetail>
+                      <CourseDetail>
+                        {formatCourseDate(course.InicioCurso)}
+                      </CourseDetail>
+                      <CourseDetail>
+                        {formatCourseDate(course.FinCurso)}
+                      </CourseDetail>
+                      <CourseDetail>
+                        <StatusBadge $active={isActive}>
+                          {isActive ? "Activo" : "Finalizado"}
+                        </StatusBadge>
+                      </CourseDetail>
+                      <div>
+                        <Menus.Menu>
+                          <Menus.Toggle id={course.IDCurso} />
+                          <Menus.List id={course.IDCurso}>
+                            {isActive && (
+                              <Menus.Button
+                                icon={<HiPencil />}
+                                onClick={() => {
+                                  // TODO: Implement edit course functionality
+                                  toast.info(
+                                    "Funcionalidad de edición próximamente"
+                                  );
+                                }}
+                                disabled={!isActive}
+                              >
+                                Editar
+                              </Menus.Button>
+                            )}
+                            {isActive && (
+                              <Menus.Button
+                                icon={<HiTrash />}
+                                onClick={() => {
+                                  const confirmed = window.confirm(
+                                    `¿Está seguro de que desea finalizar este curso?\n\nEsto desactivará automáticamente a todos los estudiantes de ${selectedSchool.NombreEscuela} y actualizará las bajas del mes actual.\n\nEsta acción no se puede deshacer.`
+                                  );
+                                  if (confirmed) {
+                                    handleFinalizeCourse(course.IDCurso);
+                                  }
+                                }}
+                                disabled={isFinalizingCourse}
+                              >
+                                {isFinalizingCourse
+                                  ? "Finalizando..."
+                                  : "Finalizar"}
+                              </Menus.Button>
+                            )}
+                            {!isActive && (
+                              <Menus.Button
+                                icon={<HiTrash />}
+                                disabled={true}
+                                onClick={() => {}}
+                              >
+                                Finalizado
+                              </Menus.Button>
+                            )}
+                          </Menus.List>
+                        </Menus.Menu>
+                      </div>
+                    </Table.Row>
+                  );
+                }}
+              />
+            </Table>
+          </TableContainer>
+        </Menus>
       )}
     </div>
   );

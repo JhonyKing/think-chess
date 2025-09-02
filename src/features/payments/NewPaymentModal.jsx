@@ -13,6 +13,7 @@ import {
 } from "./usePayments";
 import { useSchools } from "../schools/useSchools";
 import { toast } from "react-hot-toast";
+import { getCurrentDateTime, getCurrentISOString } from "../../utils/dateUtils";
 
 const ModalContent = styled.div`
   padding: 2.4rem 2rem;
@@ -83,7 +84,7 @@ function NewPaymentModal({
   const { schools = [], isLoading: isLoadingSchools } = useSchools();
 
   // Generar número de recibo SOLO para nuevos pagos, NO para edición
-  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  const today = getCurrentISOString().split("T")[0]; // YYYY-MM-DD
   const { nextNumero, isLoading: isGeneratingRecibo } = useNextNumeroRecibo(
     pagoEdit ? null : today // Solo generar si NO es edición
   );
@@ -186,7 +187,7 @@ function NewPaymentModal({
       }
     } else {
       // Para nuevo pago, generar número de recibo
-      const today = new Date();
+      const today = getCurrentDateTime();
       const fechaHora = today.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
 
       setForm((prevForm) => ({
@@ -196,6 +197,20 @@ function NewPaymentModal({
       }));
     }
   }, [pagoEdit, bancos]);
+
+  // Precargar monto de inscripción automáticamente cuando sea Inscripcion
+  useEffect(() => {
+    if (
+      !pagoEdit &&
+      mesPagado === "Inscripcion" &&
+      studentSchool?.Inscripcion
+    ) {
+      setForm((prevForm) => ({
+        ...prevForm,
+        Monto: studentSchool.Inscripcion,
+      }));
+    }
+  }, [pagoEdit, mesPagado, studentSchool]);
 
   // Precargar banco del último pago si es para un nuevo pago (no edición)
   useEffect(() => {
@@ -593,22 +608,25 @@ function NewPaymentModal({
               )}
           </Field>
         )}
-        <Field>
-          <Label>Tipo de Monto:</Label>
-          <Select
-            value={selectedAmountType}
-            onChange={handleAmountTypeChange}
-            disabled={form.PagoNulo}
-            aria-label="Seleccionar tipo de monto"
-          >
-            <option value="">Seleccione una opción</option>
-            {amountOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        {/* Solo mostrar Tipo de Monto para mensualidades, no para inscripciones */}
+        {mesPagado !== "Inscripcion" && (
+          <Field>
+            <Label>Tipo de Monto:</Label>
+            <Select
+              value={selectedAmountType}
+              onChange={handleAmountTypeChange}
+              disabled={form.PagoNulo}
+              aria-label="Seleccionar tipo de monto"
+            >
+              <option value="">Seleccione una opción</option>
+              {amountOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        )}
         <Field>
           <Label>Monto:</Label>
           <Input

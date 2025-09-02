@@ -274,11 +274,23 @@ function CreateEditSchoolForm({ schoolToEdit = {}, onCloseModal }) {
             <Input
               type="text"
               id="NombreEscuela"
-              disabled={isWorking}
+              disabled={isWorking || isEditSession} // Disable when editing
+              readOnly={isEditSession} // Make read-only when editing
               {...register("NombreEscuela", {
                 required: "Este campo es obligatorio",
               })}
-              style={{ width: "25em" }}
+              style={{
+                width: "25em",
+                backgroundColor: isEditSession
+                  ? "var(--color-grey-100)"
+                  : "inherit",
+                cursor: isEditSession ? "not-allowed" : "auto",
+              }}
+              title={
+                isEditSession
+                  ? "El nombre de la escuela no puede ser modificado"
+                  : ""
+              }
             />
           </FormRow>
 

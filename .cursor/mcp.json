@@ -10,6 +10,12 @@
         "--access-token",
         "sbp_954c48e8a92d9f29ac556727f1ad725f54d2bcce"
       ]
+    },
+    "render": {
+      "url": "https://mcp.render.com/mcp",
+      "headers": {
+        "Authorization": "Bearer rnd_N9XGVvnU5outnah2djGGFOq9zmg7"
+      }
     }
   }
 }

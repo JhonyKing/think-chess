@@ -14,6 +14,7 @@ import FileInput from "../../ui/FileInput";
 import Select from "../../ui/Select";
 import SpinnerMini from "../../ui/SpinnerMini";
 import { useControlNumber } from "./useControlNumber";
+import { useSendEmailWithTemplate } from "../emails/useSendEmail";
 
 const StyledForm = styled(Form)`
   width: 100%;
@@ -116,6 +117,12 @@ function CreateStudentForm({
 
   const [imagePreview, setImagePreview] = useState(existingImageUrl || null);
 
+  // Estados para modal de confirmación de email de bienvenida
+  // Variables de email eliminadas - ahora se envía automáticamente
+
+  // Hook para envío de emails
+  const { sendEmail, isSending } = useSendEmailWithTemplate();
+
   const {
     register,
     handleSubmit,
@@ -212,11 +219,31 @@ function CreateStudentForm({
 
   const { mutate: createStudent, isLoading: isCreating } = useMutation({
     mutationFn: createEditStudent,
-    onSuccess: () => {
+    onSuccess: (createdStudent) => {
       toast.success("Nuevo Alumno creado con éxito");
       queryClient.invalidateQueries({ queryKey: ["students"] });
       // Los estudiantes están relacionados con pagos
       queryClient.invalidateQueries({ queryKey: ["payments"] });
+
+      // Si el nuevo alumno tiene correo, enviar correo de bienvenida automáticamente
+      if (createdStudent && createdStudent.Correo) {
+        sendEmail(
+          {
+            tipoPlantilla: "CORREO BIENVENIDA",
+            alumnoData: createdStudent,
+            paymentData: {}, // No hay datos de pago para correo de bienvenida
+          },
+          {
+            onSuccess: () => {
+              toast.success("Correo de bienvenida enviado");
+            },
+            onError: (error) => {
+              console.error("Error enviando correo de bienvenida:", error);
+              toast.error("Error al enviar correo de bienvenida");
+            },
+          }
+        );
+      }
       reset();
       onCloseModal?.();
     },
@@ -246,6 +273,7 @@ function CreateStudentForm({
     isLoadingSchools ||
     isLoadingProfessors ||
     isLoadingStudents ||
+    isSending ||
     (!isEditSession && isGeneratingControlNumber);
 
   function onSubmit(data) {
@@ -283,6 +311,8 @@ function CreateStudentForm({
       .join("; ");
     toast.error(errorMessages || "Error en el formulario. Revisa los campos.");
   }
+
+  // Funciones de email eliminadas - ahora se envía automáticamente
 
   const percentageOptions = Array.from({ length: 11 }, (_, i) => ({
     value: i * 10,
@@ -602,6 +632,8 @@ function CreateStudentForm({
           {isEditSession ? "Guardar Cambios" : "Confirmar Estudiante"}
         </Button>
       </ButtonContainer>
+
+      {/* Modal de bienvenida eliminado - ahora se envía automáticamente */}
     </StyledForm>
   );
 }

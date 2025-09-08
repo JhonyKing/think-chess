@@ -31,6 +31,7 @@ import { useMutation } from "@tanstack/react-query";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useSendMassReminders } from "../emails/useSendEmail";
+import EmailConfirmationModal from "../../ui/EmailConfirmationModal";
 
 const TableWrapper = styled.div`
   overflow-x: auto;
@@ -282,6 +283,11 @@ function PaymentsTable({ course, schoolId }) {
   const [schoolInfo, setSchoolInfo] = useState(null);
   const [showMesSelect, setShowMesSelect] = useState(false);
   const [mesSeleccionado, setMesSeleccionado] = useState("");
+
+  // Estados para modal de confirmación de emails masivos
+  const [showEmailMassConfirmModal, setShowEmailMassConfirmModal] =
+    useState(false);
+  const [alumnosAdeudoParaEmail, setAlumnosAdeudoParaEmail] = useState([]);
 
   // Hook para envío masivo de recordatorios
   const { sendReminders, isSendingReminders } = useSendMassReminders();
@@ -1297,11 +1303,7 @@ function PaymentsTable({ course, schoolId }) {
         montoInscripcionesPendientes: monto,
       };
     }, [students, allCoursePayments, schoolInfo]);
-  // CÁLCULO DIRECTO FORZADO
-  console.log("🔍 FORZANDO CÁLCULO DE MENSUALIDADES PENDIENTES:");
-  console.log("👥 students:", students);
-  console.log("💰 schoolInfo:", schoolInfo);
-  console.log("📊 allCoursePayments:", allCoursePayments);
+  // Cálculo de mensualidades pendientes
 
   // CÁLCULO CORRECTO Y DINÁMICO DE MENSUALIDADES PENDIENTES
   const { mensualidadesPendientes, montoMensualidadesPendientes } =
@@ -1314,12 +1316,45 @@ function PaymentsTable({ course, schoolId }) {
       let cantidadPendientes = 0;
       let montoPendienteTotal = 0;
 
-      console.log("🔄 CALCULANDO MENSUALIDADES PENDIENTES:");
-      console.log("👥 students.length:", students.length);
-      console.log("📊 allCoursePayments.length:", allCoursePayments.length);
+      // Solo calcular deuda desde el inicio del curso hasta el mes actual
+      const now = new Date();
+      const currentMonth = now.getMonth(); // 0-11 (Enero=0, Febrero=1, etc.)
+      const currentYear = now.getFullYear();
+
+      if (!course?.InicioCurso) {
+        return { mensualidadesPendientes: 0, montoMensualidadesPendientes: 0 };
+      }
+
+      const courseStartDate = new Date(course.InicioCurso);
+      const courseStartMonth = courseStartDate.getMonth();
+      const courseStartYear = courseStartDate.getFullYear();
+
+      // LÓGICA CORREGIDA: Solo incluir meses desde el inicio del curso hasta hoy
+      const monthsToCheck = months.filter((month) => {
+        const monthIndex = MESES_DB.indexOf(month);
+        if (monthIndex === -1) return false;
+
+        if (currentYear === courseStartYear) {
+          // Mismo año: desde mes de inicio del curso hasta mes actual
+          return monthIndex >= courseStartMonth && monthIndex <= currentMonth;
+        } else if (currentYear > courseStartYear) {
+          // Año posterior al inicio del curso: incluir todos los meses del curso del año anterior
+          // + meses del año actual hasta el mes actual
+          return true; // Simplificado - se puede refinar si hay cursos multi-año
+        } else {
+          // Año anterior al inicio del curso: no incluir nada
+          return false;
+        }
+      });
+
+      console.log(
+        "📅 MESES A VERIFICAR (desde inicio curso hasta hoy):",
+        monthsToCheck
+      );
+      console.log("📅 TOTAL MESES A VERIFICAR:", monthsToCheck.length);
 
       students.forEach((student) => {
-        months.forEach((month) => {
+        monthsToCheck.forEach((month) => {
           // Buscar todos los pagos de este estudiante para este mes
           const pagosDelMes = allCoursePayments.filter(
             (p) =>
@@ -1330,14 +1365,12 @@ function PaymentsTable({ course, schoolId }) {
             // No hay pagos → pendiente
             cantidadPendientes += 1;
             montoPendienteTotal += mensualidadNormal;
-            console.log(`❌ ${student.ApellidoPaterno} - ${month}: SIN PAGOS`);
           } else {
             // Verificar si está liquidado o es pago nulo
             const pagoLiquidado = pagosDelMes.find((p) => p.Liquidado === true);
             const pagoNulo = pagosDelMes.find((p) => p.Monto === 0);
 
             if (pagoLiquidado || pagoNulo) {
-              console.log(`✅ ${student.ApellidoPaterno} - ${month}: PAGADO`);
               return; // No pendiente
             }
 
@@ -1353,34 +1386,23 @@ function PaymentsTable({ course, schoolId }) {
               if (faltaPagar > 0) {
                 cantidadPendientes += 1;
                 montoPendienteTotal += faltaPagar;
-                console.log(
-                  `🟡 ${student.ApellidoPaterno} - ${month}: ABONO PARCIAL (falta $${faltaPagar})`
-                );
               } else {
-                console.log(
-                  `✅ ${student.ApellidoPaterno} - ${month}: ABONOS COMPLETOS`
-                );
+                // Abonos completos, no pendiente
               }
             } else {
               // Hay pagos pero no liquidados → pendiente
               cantidadPendientes += 1;
               montoPendienteTotal += mensualidadNormal;
-              console.log(
-                `❌ ${student.ApellidoPaterno} - ${month}: PAGO NO LIQUIDADO`
-              );
             }
           }
         });
       });
 
-      console.log("📊 TOTAL PENDIENTES:", cantidadPendientes);
-      console.log("💰 TOTAL MONTO:", montoPendienteTotal);
-
       return {
         mensualidadesPendientes: cantidadPendientes,
         montoMensualidadesPendientes: montoPendienteTotal,
       };
-    }, [students, allCoursePayments, months, schoolInfo]);
+    }, [students, allCoursePayments, months, schoolInfo, course?.InicioCurso]);
 
   if (!course) return null;
   if (loading || loadingPayments) return <div>Cargando alumnos...</div>;
@@ -1547,25 +1569,58 @@ function PaymentsTable({ course, schoolId }) {
       return;
     }
 
-    // Confirmar envío
-    const confirmar = window.confirm(
-      `¿Está seguro de enviar recordatorios a ${alumnosAdeudo.length} alumnos con adeudo en ${mesSeleccionado}?`
-    );
+    // Filtrar solo alumnos que tengan correo electrónico
+    const alumnosConCorreo = alumnosAdeudo.filter((alumno) => alumno.Correo);
 
-    if (confirmar) {
-      // Enviar recordatorios usando el hook
-      sendReminders(
-        {
-          alumnosConAdeudo: alumnosAdeudo,
-          mesPagado: mesSeleccionado,
-        },
-        {
-          onSuccess: () => {
-            setShowMesSelect(false);
-          },
-        }
+    if (alumnosConCorreo.length === 0) {
+      toast.error(
+        "Ningún alumno con adeudo tiene correo electrónico registrado"
+      );
+      return;
+    }
+
+    if (alumnosConCorreo.length < alumnosAdeudo.length) {
+      toast.warn(
+        `${
+          alumnosAdeudo.length - alumnosConCorreo.length
+        } alumnos sin correo serán omitidos`
       );
     }
+
+    // Mostrar modal de confirmación con selector de tipo
+    setAlumnosAdeudoParaEmail(alumnosConCorreo);
+    setShowEmailMassConfirmModal(true);
+    setShowMesSelect(false);
+  }
+
+  function handleMassEmailConfirm(tipoPlantilla) {
+    console.log("🎯 handleMassEmailConfirm llamado con:", {
+      tipoPlantilla,
+      alumnosCount: alumnosAdeudoParaEmail.length,
+      mesPagado: mesSeleccionado,
+    });
+
+    // Enviar recordatorios usando el hook con el tipo seleccionado
+    console.log("📬 Llamando sendReminders con parametros:", {
+      alumnosConAdeudo: alumnosAdeudoParaEmail,
+      mesPagado: mesSeleccionado,
+      tipoPlantilla: tipoPlantilla || "CORREO RECORDATORIO",
+    });
+
+    sendReminders({
+      alumnosConAdeudo: alumnosAdeudoParaEmail,
+      mesPagado: mesSeleccionado,
+      tipoPlantilla: tipoPlantilla || "CORREO RECORDATORIO", // Pasar el tipo de plantilla seleccionado
+    });
+
+    console.log("✅ sendReminders llamado exitosamente");
+    setShowEmailMassConfirmModal(false);
+    setAlumnosAdeudoParaEmail([]);
+  }
+
+  function handleMassEmailCancel() {
+    setShowEmailMassConfirmModal(false);
+    setAlumnosAdeudoParaEmail([]);
   }
 
   return (
@@ -1916,6 +1971,9 @@ function PaymentsTable({ course, schoolId }) {
           />
         )}
       </Modal.Window>
+      <Modal.Window name="payment-email-confirmation">
+        {/* Este modal se abrirá cuando se necesite confirmación de email */}
+      </Modal.Window>
       <Modal.Window name="editar-pago">
         {editPayment ? (
           <NewPaymentModal
@@ -1931,6 +1989,26 @@ function PaymentsTable({ course, schoolId }) {
           />
         ) : null}
       </Modal.Window>
+
+      {/* Modal de confirmación para envío masivo de correos */}
+      {showEmailMassConfirmModal && (
+        <Modal.Window name="mass-email-confirmation">
+          <EmailConfirmationModal
+            onCloseModal={handleMassEmailCancel}
+            onConfirm={handleMassEmailConfirm}
+            studentData={{
+              Nombre: `${alumnosAdeudoParaEmail.length} alumnos`,
+              Correo: `${alumnosAdeudoParaEmail.length} destinatarios`,
+              NumeroControl: "Envío masivo",
+            }}
+            paymentData={{
+              MesPagado: mesSeleccionado,
+            }}
+            emailType="mass-reminder"
+            isLoading={isSendingReminders}
+          />
+        </Modal.Window>
+      )}
     </>
   );
 }

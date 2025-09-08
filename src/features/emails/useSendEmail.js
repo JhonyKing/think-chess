@@ -11,7 +11,7 @@ import { toast } from "react-hot-toast";
 export function useSendEmailWithTemplate() {
   const queryClient = useQueryClient();
 
-  const { mutate: sendEmail, isLoading: isSending } = useMutation({
+  const { mutate: sendEmailMutation, isLoading: isSending } = useMutation({
     mutationFn: ({ tipoPlantilla, alumnoData, paymentData }) =>
       sendEmailWithTemplate(tipoPlantilla, alumnoData, paymentData),
 
@@ -32,6 +32,24 @@ export function useSendEmailWithTemplate() {
     },
   });
 
+  // Wrapper function que permite pasar callbacks personalizados
+  const sendEmail = (emailData, options = {}) => {
+    sendEmailMutation(emailData, {
+      onSuccess: (data, variables) => {
+        // Ejecutar callback personalizado si existe
+        if (options.onSuccess) {
+          options.onSuccess(data, variables);
+        }
+      },
+      onError: (error) => {
+        // Ejecutar callback personalizado si existe
+        if (options.onError) {
+          options.onError(error);
+        }
+      },
+    });
+  };
+
   return { sendEmail, isSending };
 }
 
@@ -42,8 +60,18 @@ export function useSendMassReminders() {
   const queryClient = useQueryClient();
 
   const { mutate: sendReminders, isLoading: isSendingReminders } = useMutation({
-    mutationFn: ({ alumnosConAdeudo, mesPagado }) =>
-      sendMassReminders(alumnosConAdeudo, mesPagado),
+    mutationFn: ({
+      alumnosConAdeudo,
+      mesPagado,
+      tipoPlantilla = "CORREO RECORDATORIO",
+    }) => {
+      console.log("🚀 useSendMassReminders: mutationFn ejecutada con:", {
+        alumnosConAdeudo,
+        mesPagado,
+        tipoPlantilla,
+      });
+      return sendMassReminders(alumnosConAdeudo, mesPagado, tipoPlantilla);
+    },
 
     onSuccess: (results) => {
       const exitosos = results.filter((r) => r.success).length;
@@ -68,4 +96,3 @@ export function useSendMassReminders() {
 
   return { sendReminders, isSendingReminders };
 }
-

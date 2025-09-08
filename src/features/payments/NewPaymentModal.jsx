@@ -14,6 +14,7 @@ import {
 import { useSchools } from "../schools/useSchools";
 import { toast } from "react-hot-toast";
 import { getCurrentDateTime, getCurrentISOString } from "../../utils/dateUtils";
+import { useSendEmailWithTemplate } from "../emails/useSendEmail";
 
 const ModalContent = styled.div`
   padding: 2.4rem 2rem;
@@ -82,6 +83,7 @@ function NewPaymentModal({
   const { updatePayment, isUpdating } = useUpdatePayment();
   const { lastPayment } = useLastPaymentByStudent(student.NumeroControl);
   const { schools = [], isLoading: isLoadingSchools } = useSchools();
+  const { sendEmail, isSending } = useSendEmailWithTemplate();
 
   // Generar número de recibo SOLO para nuevos pagos, NO para edición
   const today = getCurrentISOString().split("T")[0]; // YYYY-MM-DD
@@ -115,18 +117,20 @@ function NewPaymentModal({
   const [montoConBeca, setMontoConBeca] = useState(0);
   const [cantidadBeca, setCantidadBeca] = useState(0);
   const [error, setError] = useState("");
-  const [showRecordatorioModal, setShowRecordatorioModal] = useState(false);
-  const [correoEditado, setCorreoEditado] = useState("");
   const [selectedAmountType, setSelectedAmountType] = useState("");
   const [showBankPreloadMessage, setShowBankPreloadMessage] = useState(false);
   const [lastPaymentBankId, setLastPaymentBankId] = useState(null);
+
+  // Estados para modales de confirmación de email
+  // Variables de email eliminadas - ahora se envían automáticamente
 
   const isWorking =
     isCreating ||
     isUpdating ||
     isLoadingBancos ||
     isLoadingSchools ||
-    (!pagoEdit && isGeneratingRecibo);
+    (!pagoEdit && isGeneratingRecibo) ||
+    isSending;
 
   // Encontrar la escuela del estudiante
   const studentSchool = schools.find(
@@ -481,6 +485,64 @@ function NewPaymentModal({
       createPayment(pago, {
         onSuccess: () => {
           console.log("Pago creado exitosamente");
+
+          // Enviar email automáticamente si es apropiado
+          if (student.Correo && pago.Monto > 0) {
+            let tipoPlantilla = "";
+            if (pago.Liquidado) {
+              tipoPlantilla = "CORREO AGRADECIMIENTO";
+            } else {
+              tipoPlantilla = "CORREO ABONO";
+            }
+
+            if (tipoPlantilla) {
+              // Calcular saldo pendiente para abonos
+              let saldoPendiente = 0;
+              if (!pago.Liquidado && studentSchool) {
+                const montoCompleto =
+                  pago.MesPagado === "Inscripcion"
+                    ? studentSchool.Inscripcion || 0
+                    : studentSchool.MensualidadPorAlumno || 0;
+                saldoPendiente = Math.max(
+                  0,
+                  montoCompleto - Number(pago.Monto)
+                );
+              }
+
+              const alumnoData = {
+                Nombre: student.Nombre,
+                ApellidoPaterno: student.ApellidoPaterno,
+                ApellidoMaterno: student.ApellidoMaterno,
+                NumeroControl: student.NumeroControl,
+                Correo: student.Correo,
+                NombreEscuela: student.NombreEscuela,
+              };
+
+              const paymentData = {
+                NumeroRecibo: pago.NumeroRecibo,
+                MesPagado: pago.MesPagado,
+                Monto: pago.Monto,
+                FechaHora: pago.FechaHora,
+                MetodoPago: pago.MetodoPago,
+                SaldoPendiente: saldoPendiente,
+              };
+
+              // Enviar email automáticamente
+              sendEmail(
+                { tipoPlantilla, alumnoData, paymentData },
+                {
+                  onSuccess: () => {
+                    toast.success("Correo enviado exitosamente");
+                  },
+                  onError: (error) => {
+                    console.error("Error enviando correo:", error);
+                    toast.error("Error al enviar correo");
+                  },
+                }
+              );
+            }
+          }
+
           if (onPagoGuardado) onPagoGuardado();
           onCloseModal();
         },
@@ -492,31 +554,68 @@ function NewPaymentModal({
     }
   }
 
-  async function handleOpenRecordatorio() {
-    // Simular fetch de plantilla de correo (reemplazar por fetch real a PLANTILLADECORREO)
-    // Aquí deberías hacer un fetch a la tabla PLANTILLADECORREO filtrando por tipo 'CORREO RECORDATORIO'
-    // y luego reemplazar los campos {{NOMBRE}}, {{MES}}, etc. por los datos reales
-    const plantilla =
-      "Estimado/a {{NOMBRE}},\n\nLe recordamos que tiene un adeudo correspondiente al mes de {{MES}}.\nPor favor, realice su pago a la brevedad.\n\nSaludos,\nAdministración";
-    const correo = plantilla
-      .replace(
-        "{{NOMBRE}}",
-        `${student.Nombre} ${student.ApellidoPaterno} ${student.ApellidoMaterno}`
-      )
-      .replace("{{MES}}", mesPagado);
-    setCorreoEditado(correo);
-    setShowRecordatorioModal(true);
+  function handleOpenRecordatorio() {
+    console.log(
+      "🔴 handleOpenRecordatorio llamado para:",
+      student.NumeroControl
+    );
+
+    // Enviar recordatorio directamente
+    if (!student.Correo) {
+      console.error("❌ Alumno sin correo:", student.NumeroControl);
+      toast.error("El alumno no tiene correo electrónico registrado");
+      return;
+    }
+
+    console.log("📧 Enviando recordatorio a:", student.Correo);
+
+    const alumnoData = {
+      Nombre: student.Nombre,
+      ApellidoPaterno: student.ApellidoPaterno,
+      ApellidoMaterno: student.ApellidoMaterno,
+      NumeroControl: student.NumeroControl,
+      Correo: student.Correo,
+      NombreEscuela: student.NombreEscuela,
+    };
+
+    const paymentData = {
+      MesPagado: mesPagado,
+      Monto: 0,
+      SaldoPendiente: 0,
+      FechaHora: new Date().toISOString(),
+      NumeroRecibo: "",
+    };
+
+    console.log("📦 Datos preparados para sendEmail:", {
+      tipoPlantilla: "CORREO RECORDATORIO",
+      alumnoData,
+      paymentData,
+    });
+
+    // Enviar recordatorio automáticamente
+    sendEmail(
+      {
+        tipoPlantilla: "CORREO RECORDATORIO",
+        alumnoData,
+        paymentData,
+      },
+      {
+        onSuccess: () => {
+          console.log("✅ Recordatorio enviado exitosamente");
+          toast.success("Recordatorio enviado exitosamente");
+        },
+        onError: (error) => {
+          console.error("❌ Error enviando recordatorio:", error);
+          toast.error(
+            "Error al enviar recordatorio: " +
+              (error?.message || "Error desconocido")
+          );
+        },
+      }
+    );
   }
 
-  function handleCloseRecordatorio() {
-    setShowRecordatorioModal(false);
-  }
-
-  async function handleEnviarCorreo() {
-    // Aquí deberías conectar con el API de IONOS WEBMAIL
-    toast.success("Correo de recordatorio enviado (simulado)");
-    setShowRecordatorioModal(false);
-  }
+  // Funciones de email eliminadas - ahora se envían automáticamente
 
   if (isLoadingBancos) return <ModalContent>Cargando...</ModalContent>;
 
@@ -700,9 +799,12 @@ function NewPaymentModal({
             type="button"
             variation="danger"
             onClick={handleOpenRecordatorio}
-            disabled={isWorking}
+            disabled={isWorking || !student.Correo}
+            title={
+              !student.Correo ? "El alumno no tiene correo registrado" : ""
+            }
           >
-            Enviar recordatorio
+            {isSending ? "Enviando..." : "Enviar recordatorio"}
           </Button>
           <Button type="submit" variation="primary" disabled={isWorking}>
             {isWorking ? "Guardando..." : "Guardar"}
@@ -710,48 +812,8 @@ function NewPaymentModal({
         </Footer>
         {error && <div style={{ color: "red" }}>{error}</div>}
       </form>
-      {showRecordatorioModal && (
-        <ModalContent
-          as="div"
-          style={{
-            background: "#fff",
-            border: "1px solid #ccc",
-            borderRadius: 8,
-            marginTop: 16,
-          }}
-        >
-          <Title>Correo de Recordatorio</Title>
-          <Field>
-            <Label>Para:</Label>
-            <Value>{student.Correo || "(sin correo)"}</Value>
-          </Field>
-          <Field>
-            <Label>Mensaje:</Label>
-            <textarea
-              style={{ width: "100%", minHeight: 120, fontSize: 14 }}
-              value={correoEditado}
-              onChange={(e) => setCorreoEditado(e.target.value)}
-              aria-label="Mensaje de recordatorio"
-            />
-          </Field>
-          <Footer>
-            <Button
-              type="button"
-              variation="secondary"
-              onClick={handleCloseRecordatorio}
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              variation="primary"
-              onClick={handleEnviarCorreo}
-            >
-              Enviar correo
-            </Button>
-          </Footer>
-        </ModalContent>
-      )}
+
+      {/* Modal de confirmación se renderiza fuera del modal principal */}
     </ModalContent>
   );
 }

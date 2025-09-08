@@ -5,9 +5,9 @@ import supabase from "./supabase";
  */
 export async function getEmailTemplates() {
   const { data, error } = await supabase
-    .from("PLANTILLASDECOREO") // Corregido el nombre de la tabla
+    .from("PLANTILLADECORREO") // Nombre correcto de la tabla
     .select("*")
-    .order("Nombre");
+    .order("TipoDeCorreo");
 
   if (error) {
     console.error("Error fetching email templates:", error);
@@ -22,7 +22,7 @@ export async function getEmailTemplates() {
  */
 export async function createEmailTemplate(templateData) {
   const { data, error } = await supabase
-    .from("PLANTILLASDECOREO")
+    .from("PLANTILLADECORREO")
     .insert([templateData])
     .select()
     .single();
@@ -42,7 +42,7 @@ export async function createEmailTemplate(templateData) {
  */
 export async function updateEmailTemplate(id, templateData) {
   const { data, error } = await supabase
-    .from("PLANTILLASDECOREO")
+    .from("PLANTILLADECORREO")
     .update(templateData)
     .eq("PlantillaID", id)
     .select()
@@ -63,7 +63,7 @@ export async function updateEmailTemplate(id, templateData) {
  */
 export async function deleteEmailTemplate(id) {
   const { error } = await supabase
-    .from("PLANTILLASDECOREO")
+    .from("PLANTILLADECORREO")
     .delete()
     .eq("PlantillaID", id);
 

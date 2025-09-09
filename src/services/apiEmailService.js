@@ -136,6 +136,9 @@ export async function fixPurpleTextInTemplates() {
         "#9370DB",
         "#8A2BE2",
         "#663399",
+        "#500050",
+        "color:#500050",
+        "color: #500050",
       ];
 
       for (const colorMorado of coloresMorados) {
@@ -156,6 +159,65 @@ export async function fixPurpleTextInTemplates() {
         );
         cambiosRealizados = true;
       }
+
+      // Quitar texto HTML visible que aparece en los correos
+      const textoHTMLVisible = [
+        'width="80" height="80"',
+        'alt="Piensa Ajedrez"',
+        'style="display:block; border:0; border-radius: 50%; max-width:80px; height:auto;"',
+        "onerror=\"this.style.display='none';\">",
+      ];
+
+      for (const textoHTML of textoHTMLVisible) {
+        if (plantillaModificada.includes(textoHTML)) {
+          plantillaModificada = plantillaModificada.replace(
+            new RegExp(textoHTML.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
+            ""
+          );
+          cambiosRealizados = true;
+        }
+      }
+
+      // CORRECCIÓN ULTRA AGRESIVA: Quitar TODAS las comillas y variantes
+      const comillasVariantes = ['"', "'", '"', '"', "'", "'", "«", "»", "`"];
+
+      for (const comilla of comillasVariantes) {
+        if (plantillaModificada.includes(comilla)) {
+          // Escapar caracteres especiales para regex
+          const escapedComilla = comilla.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          plantillaModificada = plantillaModificada.replace(
+            new RegExp(escapedComilla, "g"),
+            ""
+          );
+          cambiosRealizados = true;
+        }
+      }
+
+      // CORRECCIÓN AGRESIVA: Eliminar TODOS los estilos color morado
+      const estilosMorados = [
+        "color:#500050",
+        "color: #500050",
+        'style="color:#500050"',
+        'style="color: #500050"',
+        "color:#9E9B94",
+        "color: #9E9B94",
+        'style="color:#9E9B94"',
+        'style="color: #9E9B94"',
+      ];
+
+      for (const estilo of estilosMorados) {
+        if (plantillaModificada.includes(estilo)) {
+          plantillaModificada = plantillaModificada.replace(
+            new RegExp(estilo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"),
+            "color:#CFCAC0"
+          );
+          cambiosRealizados = true;
+        }
+      }
+
+      console.log(
+        "✅ Corrección agresiva aplicada: comillas y estilos morados eliminados"
+      );
 
       if (cambiosRealizados) {
         const { error: updateError } = await supabase
@@ -180,6 +242,94 @@ export async function fixPurpleTextInTemplates() {
     console.error("❌ Error corrigiendo colores:", error);
     throw error;
   }
+}
+
+/**
+ * Genera asunto único y dinámico para evitar agrupación de Gmail
+ * @param {string} asuntoBase - Asunto base de la plantilla
+ * @param {Object} data - Datos para personalizar
+ * @returns {string} Asunto único
+ */
+function generarAsuntoUnico(asuntoBase, data) {
+  const ahora = new Date();
+  const timestamp = ahora.getTime();
+  const fecha = ahora.toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const hora = ahora.toLocaleTimeString("es-ES", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+
+  // Crear identificador único basado en datos
+  const identificadores = [
+    data.NumeroControl ? `#${data.NumeroControl}` : null,
+    data.numeroRecibo ? `Recibo ${data.numeroRecibo}` : null,
+    data.nombreAlumno ? data.nombreAlumno.split(" ")[0] : null,
+    `${fecha}`,
+    `${hora}h`,
+  ].filter(Boolean);
+
+  // Si el asunto ya tiene variables, reemplazarlas primero
+  let asuntoPersonalizado = asuntoBase;
+
+  // Reemplazar variables comunes en asuntos
+  const variablesAsunto = {
+    "{{Nombre}}": data.nombreAlumno?.split(" ")[0] || data.NumeroControl || "",
+    "{{ApellidoPaterno}}": data.apellidoPaterno || "",
+    "{{NumeroControl}}": data.NumeroControl || "",
+    "{{FechaActual}}": fecha,
+    "{{MontoTotal}}": data.montoTotal
+      ? `$${Number(data.montoTotal).toFixed(2)}`
+      : "",
+    "{{NombreEscuela}}": data.escuela || data.nombreEscuela || "",
+    "{{NumeroRecibo}}": data.numeroRecibo || "",
+    "{{MesPagado}}": data.concepto || data.MesPagado || "",
+  };
+
+  Object.entries(variablesAsunto).forEach(([variable, valor]) => {
+    asuntoPersonalizado = asuntoPersonalizado.replace(
+      new RegExp(variable.replace(/[{}]/g, "\\$&"), "g"),
+      valor
+    );
+  });
+
+  // Agregar identificador único al final
+  const identificadorUnico = identificadores.slice(0, 2).join(" · ");
+
+  // Evitar duplicar información si ya está en el asunto
+  if (!asuntoPersonalizado.includes(identificadorUnico)) {
+    asuntoPersonalizado += ` · ${identificadorUnico}`;
+  }
+
+  // Agregar timestamp invisible para máxima unicidad (solo si es necesario)
+  const timestampUnico = timestamp.toString().slice(-6);
+  asuntoPersonalizado += ` [${timestampUnico}]`;
+
+  return asuntoPersonalizado;
+}
+
+/**
+ * Genera Message-ID único para evitar agrupación de Gmail
+ * @param {Object} data - Datos para generar ID único
+ * @returns {string} Message-ID único
+ */
+function generarMessageIdUnico(data) {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 15);
+  const identificador = [
+    data.numeroRecibo || "",
+    data.NumeroControl || "",
+    timestamp,
+    random,
+  ]
+    .filter(Boolean)
+    .join(".");
+
+  return `<${identificador}@piensaajedrez.com>`;
 }
 
 /**
@@ -224,8 +374,8 @@ export function processEmailTemplate(template, data) {
     "{{NombreEscuela}}": data.escuela || data.nombreEscuela || "",
     "{{Monto}}": data.monto ? `$${Number(data.monto).toFixed(2)}` : "$0.00",
     "{{MontoTotal}}": data.montoTotal
-      ? `$${Number(data.montoTotal).toFixed(2)}`
-      : "$0.00",
+      ? `${Number(data.montoTotal).toFixed(2)}`
+      : "0.00",
     "{{Abonado}}": data.monto ? `$${Number(data.monto).toFixed(2)}` : "$0.00",
     "{{SaldoPendiente}}": data.saldoPendiente
       ? `$${Number(data.saldoPendiente).toFixed(2)}`
@@ -240,7 +390,9 @@ export function processEmailTemplate(template, data) {
       : "$0.00",
     "{{Descripcion}}": data.descripcion || data.concepto || "",
     "{{MetodoDePago}}": data.metodoPago || "Efectivo",
-    "{{MensualidadPorAlumno}}": data.montoTotal || "$0.00",
+    "{{MensualidadPorAlumno}}": data.montoTotal
+      ? `${Number(data.montoTotal).toFixed(2)}`
+      : "0.00",
   };
 
   // Reemplazar variables en contenido y asunto
@@ -255,15 +407,60 @@ export function processEmailTemplate(template, data) {
     );
   });
 
+  // CRÍTICO: Eliminar comillas del CONTENIDO después del reemplazo
+  // Esto previene que Gmail interprete texto como código
+  contenido = contenido.replace(/["'"'"'"«»]/g, "");
+
+  // Agregar SOLO color !important a tags HTML (NO todos los estilos)
+  contenido = contenido.replace(
+    /<(p|span|div|strong|em|a|li|ul|ol|h[1-6])\s*([^>]*)>/gi,
+    (match, tag, attrs) => {
+      // Si ya tiene style, agregar !important SOLO a las propiedades color
+      if (attrs.includes("style=")) {
+        attrs = attrs.replace(
+          /style="([^"]+)"/gi,
+          (styleMatch, styleContent) => {
+            // Agregar !important SOLO a propiedades color
+            const withImportantColors = styleContent.replace(
+              /(color\s*:\s*[^;]+)(;|$)/gi,
+              (colorProp, colorValue, ending) => {
+                if (!colorValue.includes("!important")) {
+                  return colorValue + " !important" + ending;
+                }
+                return colorProp;
+              }
+            );
+            return `style="${withImportantColors}"`;
+          }
+        );
+      } else {
+        // Si no tiene style, agregar SOLO color blanco con !important
+        attrs += ` style="color:#F7F5EF !important;"`;
+      }
+      return `<${tag} ${attrs}>`;
+    }
+  );
+
+  console.log(
+    "✅ Contenido procesado: comillas eliminadas y estilos reforzados"
+  );
+
   console.log("✅ Plantilla procesada:", {
     asuntoFinal: asunto,
     contenidoPreview: contenido.substring(0, 100) + "...",
   });
 
+  // Generar asunto único y dinámico
+  const asuntoUnico = generarAsuntoUnico(
+    asunto || `Notificación - ${template.TipoDeCorreo}`,
+    data
+  );
+
   return {
-    asunto: asunto || `Notificación - ${template.TipoDeCorreo}`,
+    asunto: asuntoUnico,
     contenido,
     template: template.TipoDeCorreo,
+    messageId: generarMessageIdUnico(data), // Agregar Message-ID único
   };
 }
 
@@ -294,6 +491,7 @@ export async function sendEmail(emailData) {
       subject: emailData.asunto,
       html: emailData.contenido.replace(/\n/g, "<br>"), // Convertir saltos de línea a HTML
       text: emailData.contenido, // También enviar version texto plano
+      ...(emailData.messageId && { messageId: emailData.messageId }), // Incluir Message-ID único si está disponible
     };
 
     let result;
@@ -441,11 +639,12 @@ export async function sendEmailWithTemplate(
   paymentData = {}
 ) {
   try {
-    // Corregir texto morado al inicio (solo una vez)
-    if (!window.emailTemplatesFixed) {
-      await fixPurpleTextInTemplates();
-      window.emailTemplatesFixed = true;
-    }
+    // CORRECCIÓN ULTRA AGRESIVA FORZADA - SIN CACHE - CADA VEZ
+    console.log("🔥 EJECUTANDO CORRECCIÓN ULTRA AGRESIVA...");
+    await fixPurpleTextInTemplates();
+    console.log(
+      "✅ Corrección ultra agresiva completada - comillas y colores eliminados"
+    );
     console.log("📧 Enviando correo con plantilla:", tipoPlantilla);
     console.log("👤 Datos del alumno:", alumnoData);
     console.log("💰 Datos del pago:", paymentData);
@@ -477,10 +676,25 @@ export async function sendEmailWithTemplate(
 
     // Calcular monto total según el tipo de pago
     let montoTotal = 0;
-    if (paymentData.MesPagado === "Inscripcion" && schoolInfo?.Inscripcion) {
-      montoTotal = schoolInfo.Inscripcion;
-    } else if (schoolInfo?.MensualidadPorAlumno) {
-      montoTotal = schoolInfo.MensualidadPorAlumno;
+
+    console.log("🔍 Calculando montoTotal:", {
+      mesPagado: paymentData.MesPagado,
+      montoFromPayment: paymentData.Monto,
+      escuelaInscripcion: schoolInfo?.Inscripcion,
+      escuelaMensualidad: schoolInfo?.MensualidadPorAlumno,
+    });
+
+    if (paymentData.MesPagado === "Inscripcion") {
+      // Para inscripciones, usar el valor de inscripción de la escuela
+      montoTotal = schoolInfo?.Inscripcion || 0;
+    } else {
+      // Para mensualidades, usar el valor de mensualidad por alumno de la escuela
+      montoTotal = schoolInfo?.MensualidadPorAlumno || 0;
+    }
+
+    // Si aún es 0 y hay un monto en paymentData, usarlo como respaldo
+    if (montoTotal === 0 && paymentData.Monto && paymentData.Monto > 0) {
+      montoTotal = paymentData.Monto;
     }
 
     console.log("💰 Monto total calculado:", {
@@ -547,7 +761,7 @@ export async function sendEmailWithTemplate(
       escuela: alumnoData.NombreEscuela || "",
       nombreEscuela: alumnoData.NombreEscuela || "",
       monto: paymentData.Monto,
-      montoTotal: paymentDetails.montoTotal,
+      montoTotal: montoTotal, // Usar el valor numérico calculado, no el formateado
       saldoPendiente: paymentData.SaldoPendiente,
       fecha: paymentDetails.fecha,
       concepto: paymentDetails.concepto,
@@ -570,12 +784,13 @@ export async function sendEmailWithTemplate(
       tipoPlantilla,
     });
 
-    // Enviar el correo
+    // Enviar el correo con Message-ID único
     const result = await sendEmail({
       destinatario,
       asunto,
       contenido: htmlContent,
       plantilla: tipoPlantilla,
+      messageId: emailContent.messageId, // Usar Message-ID único generado
     });
 
     console.log("✅ Correo enviado exitosamente:", result);

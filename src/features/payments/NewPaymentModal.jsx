@@ -578,12 +578,15 @@ function NewPaymentModal({
       NombreEscuela: student.NombreEscuela,
     };
 
+    // OBTENER EL MONTO CORRECTO DE LA ESCUELA SEGÚN EL MES
     const paymentData = {
       MesPagado: mesPagado,
-      Monto: 0,
+      Monto: 0, // Se calculará en sendEmailWithTemplate desde la tabla ESCUELA
       SaldoPendiente: 0,
       FechaHora: new Date().toISOString(),
       NumeroRecibo: "",
+      MetodoPago: "Pendiente",
+      Descripcion: mesPagado === "Inscripcion" ? "Inscripción" : "Mensualidad",
     };
 
     console.log("📦 Datos preparados para sendEmail:", {

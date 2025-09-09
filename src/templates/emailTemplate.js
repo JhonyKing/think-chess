@@ -4,6 +4,106 @@
  */
 
 /**
+ * Limpia comillas tipográficas y dobles no deseadas del HTML
+ * @param {string} html - Contenido HTML a limpiar
+ * @param {string} modo - "eliminar" o "reemplazar"
+ * @returns {string} HTML limpio
+ */
+function limpiarComillas(html, modo = "eliminar") {
+  // Matriz de comillas tipográficas y latinas
+  const regex = /[\u201C\u201D\u2033\u00AB\u00BB\u2018\u2019\u2032]/g;
+
+  if (modo === "eliminar") {
+    return html.replace(regex, "");
+  } else {
+    // Reemplazar todas por comillas ASCII
+    return html.replace(regex, (match) => {
+      if (/[\u201C\u201D\u2033\u00AB\u00BB]/.test(match)) return "&quot;";
+      return "'";
+    });
+  }
+}
+
+/**
+ * Neutraliza triggers que hacen que Gmail aplique .im
+ * @param {string} html - Contenido HTML
+ * @returns {string} HTML sin triggers de Gmail
+ */
+function neutralizarTriggersGmail(html) {
+  return (
+    html
+      // 1. <blockquote> → <div> para evitar detección de citas
+      .replace(/<blockquote\b([^>]*)>/gi, "<div$1>")
+      .replace(/<\/blockquote>/gi, "</div>")
+      // 2. Líneas que empiezan con ">"
+      .replace(/^>+/gm, (match) => match.replace(/>/g, "&gt;"))
+      // 3. Frases típicas de reply que Gmail detecta
+      .replace(
+        /On\s.+?wrote:|El\s.+?escribió:|De:\s.+|From:\s.+|Enviado:\s.+|Sent:\s.+/gi,
+        "[…]"
+      )
+  );
+}
+
+/**
+ * Fuerza color claro en todas las etiquetas de texto para vencer a Gmail
+ * INCLUYE protección especial contra <span class="im">
+ * @param {string} html - Contenido HTML
+ * @param {string} color - Color a forzar (por defecto #F7F5EF)
+ * @returns {string} HTML con colores forzados
+ */
+function forzarColorClaro(html, color = "#F7F5EF") {
+  const tags = ["p", "li", "a", "strong", "em"];
+
+  // Procesar tags normales (excepto span)
+  for (const tag of tags) {
+    // Para tags sin style
+    const reNoStyle = new RegExp(`<${tag}(?![^>]*\\bstyle=)`, "gi");
+    html = html.replace(
+      reNoStyle,
+      `<${tag} style="color:${color} !important;"`
+    );
+
+    // Para tags con style existente
+    const reConStyle = new RegExp(`(<${tag}[^>]*style=")`, "gi");
+    html = html.replace(reConStyle, `$1color:${color} !important; `);
+  }
+
+  // CRÍTICO: Envolver contenido directo de <span> si Gmail agrega class="im"
+  html = html.replace(
+    /<span\b([^>]*)class="im"([^>]*)>([\s\S]*?)<\/span>/gi,
+    (full, a1, a2, content) =>
+      `<span${a1}class="im"${a2}>` +
+      `<span style="color:${color} !important;">${content}</span>` +
+      `</span>`
+  );
+
+  // Para TODOS los spans (no solo .im), envolver contenido en span hijo
+  html = html.replace(
+    /<span([^>]*)>(.*?)<\/span>/gis,
+    (match, attrs, inner) => {
+      // Si ya procesamos este span o ya tiene span hijo con color, saltar
+      if (
+        attrs.includes('class="im"') ||
+        inner.includes(`style="color:${color} !important;"`)
+      ) {
+        return match;
+      }
+
+      // Si el span no tiene texto directo, no envolver
+      if (!inner.trim() || /</.test(inner.trim().charAt(0))) {
+        return match;
+      }
+
+      // Envolver el contenido en span hijo con color forzado
+      return `<span${attrs}><span style="color:${color} !important;">${inner}</span></span>`;
+    }
+  );
+
+  return html;
+}
+
+/**
  * Genera el HTML completo para un correo electrónico
  * @param {Object} options - Opciones del correo
  * @param {string} options.titulo - Título principal del correo
@@ -18,12 +118,18 @@
 export function generateEmailHTML({
   titulo = "Piensa Ajedrez",
   contenido = "",
-  logoUrl = "https://i.imgur.com/logo_piensa_ajedrez.jpg",
+  logoUrl = "https://raw.githubusercontent.com/JhonyKing/think-chess/refs/heads/master/src/img/logo_piensa_ajedrez_correo.jpg",
   incluirBoton = false,
   textoBoton = "",
   urlBoton = "",
   notaAdicional = "",
+  modoComillas = "eliminar", // Nueva opción
 }) {
+  // PIPELINE COMPLETO DE PROCESAMIENTO ANTI-GMAIL
+  const contenidoSeguro = forzarColorClaro(
+    limpiarComillas(neutralizarTriggersGmail(contenido), modoComillas),
+    "#F7F5EF"
+  );
   return `
 <!doctype html>
 <html lang="es">
@@ -31,20 +137,19 @@ export function generateEmailHTML({
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>${titulo} • Piensa Ajedrez</title>
+    <style> /* --- Override para Gmail: bloques que Gmail marca como "quoted" usan .im --- */ .im, .im span, .im p, .im a { color:#F7F5EF !important; } u + .gmail-container .im, u + .gmail-container .im span, u + .gmail-container .im p, u + .gmail-container .im a { color:#F7F5EF !important; } </style>
   </head>
   <body style="margin:0; padding:0; background:#0B0B0B;">
-    <table role="presentation" align="center" width="100%" style="background:#0B0B0B;">
+    <!-- ‘u + …’ es el anzuelo que Gmail necesita para aplicar el selector -->
+    <u></u>
+    <table role="presentation" align="center" width="100%" class="gmail-container" style="background:#0B0B0B;">
       <tr>
         <td align="center">
           <table role="presentation" width="600" style="max-width:600px; background:#1A1A1A; border-radius:12px; overflow:hidden; color:#F7F5EF; font-family:Segoe UI, Arial, sans-serif;">
             <!-- Header con logo -->
             <tr>
               <td align="center" style="padding:24px;">
-                <img src="${logoUrl}" 
-                     width="120" height="120" 
-                     alt="Piensa Ajedrez" 
-                     style="display:block; border:0; border-radius: 50%;"
-                     onerror="this.style.display='none';">
+                <img src="${logoUrl}" width="120" height="120" alt="Piensa Ajedrez" style="display:block; border:0;">
               </td>
             </tr>
             <!-- Borde dorado -->
@@ -52,11 +157,11 @@ export function generateEmailHTML({
             <!-- Contenido -->
             <tr>
               <td style="padding:28px;">
-                <h1 style="color:#D4AF37; margin:0 0 20px; font-size:28px; line-height:34px;">
+                <h1 style="color:#D4AF37 !important; margin:0 0 10px; font-size:28px; line-height:34px;">
                   ${titulo}
                 </h1>
-                <div style="margin:0 0 20px; font-size:16px; line-height:24px;">
-                  ${contenido}
+                <div style="margin:0 0 16px; font-size:16px; line-height:24px; color:#F7F5EF !important;">
+                  ${contenidoSeguro}
                 </div>
                 ${
                   incluirBoton
@@ -79,7 +184,7 @@ export function generateEmailHTML({
                 ${
                   notaAdicional
                     ? `
-                <p style="margin-top:20px; font-size:13px; color:#CFCAC0;">
+                <p style="margin-top:20px; font-size:13px; color:#CFCAC0 !important;">
                   ${notaAdicional}
                 </p>
                 `
@@ -89,18 +194,18 @@ export function generateEmailHTML({
             </tr>
             <!-- Footer -->
             <tr>
-              <td style="padding:18px 28px; background:#141414; font-size:12px; line-height:18px; color:#CFCAC0;">
-                <strong style="color:#D4AF37;">Piensa Ajedrez</strong><br>
+              <td style="padding:18px 28px; background:#141414; font-size:12px; line-height:18px; color:#CFCAC0 !important;">
+                <strong style="color:#D4AF37 !important;">Piensa Ajedrez</strong><br>
                 Blvd. Municipio Libre #4702, Col. Los Encinos · Nuevo Laredo, Tamps.<br>
-                WhatsApp: <a href="https://wa.me/526671433734" style="color:#D4AF37; text-decoration:none;">(867) 143-3734</a><br><br>
-                <span style="font-size:11px; color:#CFCAC0;">
+                WhatsApp: <a href="https://wa.me/526671433734" style="color:#D4AF37 !important; text-decoration:none;">(867) 143-3734</a><br><br>
+                <span style="font-size:11px; color:#CFCAC0 !important;">
                   Si no deseas recibir estos mensajes, puedes 
-                  <a href="#" style="color:#D4AF37; text-decoration:none;">darte de baja aquí</a>.
+                  <a href="#" style="color:#D4AF37 !important; text-decoration:none;">darte de baja aquí</a>.
                 </span>
               </td>
             </tr>
             <tr>
-              <td align="center" style="padding:14px; font-size:11px; color:#CFCAC0;">
+              <td align="center" style="padding:14px; font-size:11px; color:#CFCAC0 !important;">
                 © 2025 Piensa Ajedrez — Todos los derechos reservados.
               </td>
             </tr>

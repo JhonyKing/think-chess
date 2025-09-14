@@ -436,7 +436,7 @@ function NewPaymentModal({
     const pago = {
       NumeroRecibo: String(form.NumeroRecibo),
       NumeroControl: String(form.NumeroControl),
-      Monto: form.PagoNulo ? 0 : Number(montoConBeca) || 0,
+      Monto: form.PagoNulo ? 0 : Number(form.Monto) || 0, // Usar form.Monto directamente - lo que realmente pagó
       MesPagado: String(form.MesPagado),
       FechaHora: String(form.FechaHora),
       MetodoPago: String(form.MetodoPago),
@@ -527,19 +527,42 @@ function NewPaymentModal({
                 SaldoPendiente: saldoPendiente,
               };
 
-              // Enviar email automáticamente
-              sendEmail(
-                { tipoPlantilla, alumnoData, paymentData },
-                {
-                  onSuccess: () => {
-                    toast.success("Correo enviado exitosamente");
-                  },
-                  onError: (error) => {
-                    console.error("Error enviando correo:", error);
-                    toast.error("Error al enviar correo");
-                  },
-                }
-              );
+              // Confirmar antes de enviar email automáticamente
+              const mensajeConfirmacion = pago.Liquidado
+                ? `¿Deseas enviar un correo de agradecimiento a ${
+                    student.Nombre
+                  } ${student.ApellidoPaterno}?\n\nCorreo: ${
+                    student.Correo
+                  }\nMonto: $${Number(pago.Monto).toFixed(2)}`
+                : `¿Deseas enviar un correo de confirmación de abono a ${
+                    student.Nombre
+                  } ${student.ApellidoPaterno}?\n\nCorreo: ${
+                    student.Correo
+                  }\nAbono: $${Number(pago.Monto).toFixed(2)}`;
+
+              const confirmarEnvio = window.confirm(mensajeConfirmacion);
+
+              if (confirmarEnvio) {
+                // Enviar email automáticamente
+                sendEmail(
+                  { tipoPlantilla, alumnoData, paymentData },
+                  {
+                    onSuccess: () => {
+                      const mensajeExito = pago.Liquidado
+                        ? "Correo de agradecimiento enviado exitosamente"
+                        : "Correo de abono enviado exitosamente";
+                      toast.success(mensajeExito);
+                    },
+                    onError: (error) => {
+                      console.error("Error enviando correo:", error);
+                      const mensajeError = pago.Liquidado
+                        ? "Error al enviar correo de agradecimiento"
+                        : "Error al enviar correo de abono";
+                      toast.error(mensajeError);
+                    },
+                  }
+                );
+              }
             }
           }
 
@@ -559,6 +582,32 @@ function NewPaymentModal({
       "🔴 handleOpenRecordatorio llamado para:",
       student.NumeroControl
     );
+
+    // Preguntar qué tipo de recordatorio enviar
+    const tipoRecordatorio = window.prompt(
+      `¿Qué tipo de correo deseas enviar a ${student.Nombre} ${student.ApellidoPaterno}?\n\nCorreo: ${student.Correo}\nConcepto: ${mesPagado}\n\nEscribe:\n1 = CORREO RECORDATORIO\n2 = CORREO RECORDATORIO VENCIDO\n3 = CORREO DISCULPAS\n\nOpción (1, 2 o 3):`
+    );
+
+    if (
+      !tipoRecordatorio ||
+      (tipoRecordatorio !== "1" &&
+        tipoRecordatorio !== "2" &&
+        tipoRecordatorio !== "3")
+    ) {
+      console.log("❌ Envío de correo cancelado por el usuario");
+      return;
+    }
+
+    let tipoPlantilla;
+    if (tipoRecordatorio === "1") {
+      tipoPlantilla = "CORREO RECORDATORIO";
+    } else if (tipoRecordatorio === "2") {
+      tipoPlantilla = "CORREO RECORDATORIO VENCIDO";
+    } else if (tipoRecordatorio === "3") {
+      tipoPlantilla = "CORREO DISCULPAS";
+    }
+
+    console.log("📧 Tipo de recordatorio seleccionado:", tipoPlantilla);
 
     // Enviar recordatorio directamente
     if (!student.Correo) {
@@ -590,7 +639,7 @@ function NewPaymentModal({
     };
 
     console.log("📦 Datos preparados para sendEmail:", {
-      tipoPlantilla: "CORREO RECORDATORIO",
+      tipoPlantilla,
       alumnoData,
       paymentData,
     });
@@ -598,7 +647,7 @@ function NewPaymentModal({
     // Enviar recordatorio automáticamente
     sendEmail(
       {
-        tipoPlantilla: "CORREO RECORDATORIO",
+        tipoPlantilla,
         alumnoData,
         paymentData,
       },

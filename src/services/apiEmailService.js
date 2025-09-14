@@ -374,25 +374,39 @@ export function processEmailTemplate(template, data) {
     "{{NombreEscuela}}": data.escuela || data.nombreEscuela || "",
     "{{Monto}}": data.monto ? `$${Number(data.monto).toFixed(2)}` : "$0.00",
     "{{MontoTotal}}": data.montoTotal
-      ? `${Number(data.montoTotal).toFixed(2)}`
-      : "0.00",
+      ? `$${Number(data.montoTotal).toFixed(2)}`
+      : "$0.00",
+    "{{MontoAbonado}}": data.monto
+      ? `$${Number(data.monto).toFixed(2)}`
+      : "$0.00", // Lo que pagó el cliente en ese recibo
     "{{Abonado}}": data.monto ? `$${Number(data.monto).toFixed(2)}` : "$0.00",
     "{{SaldoPendiente}}": data.saldoPendiente
       ? `$${Number(data.saldoPendiente).toFixed(2)}`
       : "$0.00",
-    "{{FechaPago}}": data.fecha || new Date().toLocaleDateString("es-MX"),
-    "{{FechaActual}}": data.fecha || new Date().toLocaleDateString("es-MX"),
+    "{{FechaPago}}":
+      data.fecha ||
+      new Date().toLocaleDateString("es-MX", { timeZone: "America/Matamoros" }),
+    "{{FechaActual}}":
+      data.fecha ||
+      new Date().toLocaleDateString("es-MX", { timeZone: "America/Matamoros" }),
     "{{FechaVencimiento}}":
-      data.fecha || new Date().toLocaleDateString("es-MX"),
-    "{{FechaLimite}}": data.fecha || new Date().toLocaleDateString("es-MX"),
+      data.fecha ||
+      new Date().toLocaleDateString("es-MX", { timeZone: "America/Matamoros" }),
+    "{{FechaLimite}}":
+      data.fecha ||
+      new Date().toLocaleDateString("es-MX", { timeZone: "America/Matamoros" }),
     "{{MontoConRecargo}}": data.montoConRecargo
       ? `$${Number(data.montoConRecargo).toFixed(2)}`
       : "$0.00",
     "{{Descripcion}}": data.descripcion || data.concepto || "",
+    "{{Concepto}}": data.concepto || data.descripcion || "",
     "{{MetodoDePago}}": data.metodoPago || "Efectivo",
     "{{MensualidadPorAlumno}}": data.montoTotal
-      ? `${Number(data.montoTotal).toFixed(2)}`
-      : "0.00",
+      ? `$${Number(data.montoTotal).toFixed(2)}`
+      : "$0.00", // Monto total de la escuela (Inscripción o Mensualidad)
+    "{{MensualidadConRecargo}}": data.mensualidadConRecargo
+      ? `$${Number(data.mensualidadConRecargo).toFixed(2)}`
+      : "$0.00", // Mensualidad con recargo de la escuela
   };
 
   // Reemplazar variables en contenido y asunto
@@ -657,51 +671,129 @@ export async function sendEmailWithTemplate(
 
     // Obtener información de la escuela del alumno para calcular montos correctos
     let schoolInfo = null;
-    if (alumnoData.NombreEscuela) {
+    let alumnoCompleto = alumnoData;
+
+    // Si no tenemos el nombre de la escuela, obtener datos completos del alumno
+    if (!alumnoData.NombreEscuela && alumnoData.NumeroControl) {
       try {
+        const { data: studentData, error: studentError } = await supabase
+          .from("ALUMNO")
+          .select(
+            "NombreEscuela, Nombre, ApellidoPaterno, ApellidoMaterno, Correo"
+          )
+          .eq("NumeroControl", alumnoData.NumeroControl)
+          .single();
+
+        if (!studentError && studentData) {
+          alumnoCompleto = { ...alumnoData, ...studentData };
+          console.log("📚 Datos completos del alumno obtenidos:", studentData);
+        }
+      } catch (err) {
+        console.warn("⚠️ No se pudo obtener datos completos del alumno:", err);
+      }
+    }
+
+    // Obtener información de la escuela
+    if (alumnoCompleto.NombreEscuela) {
+      try {
+        console.log(
+          "🔍 DEBUGGING ESCUELA - Buscando escuela:",
+          alumnoCompleto.NombreEscuela
+        );
+
         const { data: schoolData, error } = await supabase
           .from("ESCUELA")
-          .select("MensualidadPorAlumno, Inscripcion")
-          .eq("Nombre", alumnoData.NombreEscuela)
+          .select("MensualidadPorAlumno, Inscripcion, MensualidadConRecargo")
+          .eq("NombreEscuela", alumnoCompleto.NombreEscuela)
           .single();
+
+        console.log("🔍 DEBUGGING ESCUELA - Resultado consulta:", {
+          error,
+          schoolData,
+          nombreBuscado: alumnoCompleto.NombreEscuela,
+        });
 
         if (!error && schoolData) {
           schoolInfo = schoolData;
           console.log("📚 Información de escuela obtenida:", schoolData);
+          console.log(
+            "💰 MensualidadPorAlumno:",
+            schoolData.MensualidadPorAlumno
+          );
+          console.log("💰 Inscripcion:", schoolData.Inscripcion);
+          console.log(
+            "💰 MensualidadConRecargo:",
+            schoolData.MensualidadConRecargo
+          );
+        } else {
+          console.error("❌ ERROR AL OBTENER ESCUELA:", error);
+          console.log("🔍 Intentando buscar todas las escuelas para debug...");
+
+          // Intentar listar todas las escuelas para ver qué nombres hay
+          const { data: allSchools, error: listError } = await supabase
+            .from("ESCUELA")
+            .select(
+              "NombreEscuela, MensualidadPorAlumno, Inscripcion, MensualidadConRecargo"
+            );
+
+          console.log("📋 TODAS LAS ESCUELAS EN BD:", allSchools);
+          console.log("❌ Error al listar escuelas:", listError);
         }
       } catch (err) {
         console.warn("⚠️ No se pudo obtener información de la escuela:", err);
       }
+    } else {
+      console.warn("⚠️ ALUMNO NO TIENE NombreEscuela:", alumnoCompleto);
     }
 
     // Calcular monto total según el tipo de pago
     let montoTotal = 0;
 
-    console.log("🔍 Calculando montoTotal:", {
+    console.log("🔍 DEBUGGING MONTOS - Datos disponibles:", {
       mesPagado: paymentData.MesPagado,
       montoFromPayment: paymentData.Monto,
+      schoolInfo: schoolInfo,
       escuelaInscripcion: schoolInfo?.Inscripcion,
       escuelaMensualidad: schoolInfo?.MensualidadPorAlumno,
+      escuelaMensualidadConRecargo: schoolInfo?.MensualidadConRecargo,
     });
 
     if (paymentData.MesPagado === "Inscripcion") {
       // Para inscripciones, usar el valor de inscripción de la escuela
       montoTotal = schoolInfo?.Inscripcion || 0;
+      console.log(
+        "🎯 INSCRIPCION - montoTotal:",
+        montoTotal,
+        "de schoolInfo.Inscripcion:",
+        schoolInfo?.Inscripcion
+      );
     } else {
       // Para mensualidades, usar el valor de mensualidad por alumno de la escuela
       montoTotal = schoolInfo?.MensualidadPorAlumno || 0;
+      console.log(
+        "🎯 MENSUALIDAD - montoTotal:",
+        montoTotal,
+        "de schoolInfo.MensualidadPorAlumno:",
+        schoolInfo?.MensualidadPorAlumno
+      );
     }
 
     // Si aún es 0 y hay un monto en paymentData, usarlo como respaldo
     if (montoTotal === 0 && paymentData.Monto && paymentData.Monto > 0) {
+      console.log(
+        "⚠️ montoTotal era 0, usando paymentData.Monto como respaldo:",
+        paymentData.Monto
+      );
       montoTotal = paymentData.Monto;
     }
 
-    console.log("💰 Monto total calculado:", {
+    console.log("💰 RESULTADO FINAL - Monto total calculado:", {
       mesPagado: paymentData.MesPagado,
       montoTotal,
       inscripcion: schoolInfo?.Inscripcion,
       mensualidad: schoolInfo?.MensualidadPorAlumno,
+      paymentDataMonto: paymentData.Monto,
+      escuelaCompleta: schoolInfo,
     });
 
     // Preparar datos del estudiante
@@ -727,14 +819,17 @@ export async function sendEmailWithTemplate(
         ? Number(paymentData.SaldoPendiente).toFixed(2)
         : "0.00",
       fecha: paymentData.FechaHora
-        ? new Date(paymentData.FechaHora).toLocaleDateString("es-ES", {
+        ? new Date(paymentData.FechaHora).toLocaleDateString("es-MX", {
             day: "2-digit",
             month: "2-digit",
             year: "numeric",
             hour: "2-digit",
             minute: "2-digit",
+            timeZone: "America/Matamoros", // GMT-5 Matamoros, México
           })
-        : new Date().toLocaleDateString("es-ES"),
+        : new Date().toLocaleDateString("es-MX", {
+            timeZone: "America/Matamoros",
+          }),
       metodoPago: paymentData.MetodoPago || "Efectivo",
       descripcion: paymentData.MesPagado || "Mensualidad",
     };
@@ -752,16 +847,47 @@ export async function sendEmailWithTemplate(
       plantillaLength: template.Plantilla?.length || 0,
     });
 
+    // Para recordatorios, usar montoTotal calculado en lugar de paymentData.Monto (que puede ser 0)
+    const montoParaTemplate = tipoPlantilla.includes("RECORDATORIO")
+      ? montoTotal
+      : paymentData.Monto;
+
+    console.log("💰 DEBUGGING FINAL - Monto para template:", {
+      tipoPlantilla,
+      esRecordatorio: tipoPlantilla.includes("RECORDATORIO"),
+      paymentDataMonto: paymentData.Monto,
+      montoTotalCalculado: montoTotal,
+      montoParaTemplate,
+      schoolInfoComplete: schoolInfo,
+    });
+
+    if (tipoPlantilla.includes("RECORDATORIO") && montoParaTemplate === 0) {
+      console.error("🚨 PROBLEMA CRÍTICO: RECORDATORIO con monto 0!", {
+        montoTotal,
+        schoolInfo,
+        alumnoCompleto,
+        paymentData,
+      });
+    }
+
+    // Debug: Log datos que se van a pasar al template
+    console.log("🔍 DEBUGGING TEMPLATE DATA - MensualidadConRecargo:", {
+      schoolInfoCompleto: schoolInfo,
+      mensualidadConRecargo: schoolInfo?.MensualidadConRecargo,
+      valorQueSeEnviara: schoolInfo?.MensualidadConRecargo || 0,
+    });
+
     // Procesar plantilla con datos reales de la BD
     const emailContent = processEmailTemplate(template, {
-      nombreAlumno: studentData.nombre,
-      NumeroControl: alumnoData.NumeroControl,
-      apellidoPaterno: alumnoData.ApellidoPaterno || "",
-      apellidoMaterno: alumnoData.ApellidoMaterno || "",
-      escuela: alumnoData.NombreEscuela || "",
-      nombreEscuela: alumnoData.NombreEscuela || "",
-      monto: paymentData.Monto,
+      nombreAlumno: alumnoCompleto.Nombre || studentData.nombre,
+      NumeroControl: alumnoCompleto.NumeroControl,
+      apellidoPaterno: alumnoCompleto.ApellidoPaterno || "",
+      apellidoMaterno: alumnoCompleto.ApellidoMaterno || "",
+      escuela: alumnoCompleto.NombreEscuela || "",
+      nombreEscuela: alumnoCompleto.NombreEscuela || "",
+      monto: montoParaTemplate, // Usar monto correcto según tipo de correo
       montoTotal: montoTotal, // Usar el valor numérico calculado, no el formateado
+      mensualidadConRecargo: schoolInfo?.MensualidadConRecargo || 0, // Campo MensualidadConRecargo de la escuela
       saldoPendiente: paymentData.SaldoPendiente,
       fecha: paymentDetails.fecha,
       concepto: paymentDetails.concepto,
@@ -794,6 +920,30 @@ export async function sendEmailWithTemplate(
     });
 
     console.log("✅ Correo enviado exitosamente:", result);
+
+    // Si es CORREO AGRADECIMIENTO y tenemos datos de pago, actualizar campo Notificado
+    if (tipoPlantilla === "CORREO AGRADECIMIENTO" && paymentData.NumeroRecibo) {
+      try {
+        console.log(
+          "📝 Actualizando campo Notificado para recibo:",
+          paymentData.NumeroRecibo
+        );
+
+        const { error: updateError } = await supabase
+          .from("PAGO")
+          .update({ Notificado: true })
+          .eq("NumeroRecibo", paymentData.NumeroRecibo);
+
+        if (updateError) {
+          console.error("❌ Error actualizando campo Notificado:", updateError);
+        } else {
+          console.log("✅ Campo Notificado actualizado exitosamente");
+        }
+      } catch (err) {
+        console.error("❌ Error al actualizar campo Notificado:", err);
+      }
+    }
+
     return result;
   } catch (error) {
     console.error("❌ Error al enviar correo con plantilla:", error);

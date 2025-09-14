@@ -225,24 +225,30 @@ function CreateStudentForm({
       // Los estudiantes están relacionados con pagos
       queryClient.invalidateQueries({ queryKey: ["payments"] });
 
-      // Si el nuevo alumno tiene correo, enviar correo de bienvenida automáticamente
+      // Si el nuevo alumno tiene correo, preguntar si desea enviar correo de bienvenida
       if (createdStudent && createdStudent.Correo) {
-        sendEmail(
-          {
-            tipoPlantilla: "CORREO BIENVENIDA",
-            alumnoData: createdStudent,
-            paymentData: {}, // No hay datos de pago para correo de bienvenida
-          },
-          {
-            onSuccess: () => {
-              toast.success("Correo de bienvenida enviado");
-            },
-            onError: (error) => {
-              console.error("Error enviando correo de bienvenida:", error);
-              toast.error("Error al enviar correo de bienvenida");
-            },
-          }
+        const confirmarBienvenida = window.confirm(
+          `¿Deseas enviar un correo de bienvenida a ${createdStudent.Nombre} ${createdStudent.ApellidoPaterno}?\n\nCorreo: ${createdStudent.Correo}\nEscuela: ${createdStudent.NombreEscuela}`
         );
+
+        if (confirmarBienvenida) {
+          sendEmail(
+            {
+              tipoPlantilla: "CORREO BIENVENIDA",
+              alumnoData: createdStudent,
+              paymentData: {}, // No hay datos de pago para correo de bienvenida
+            },
+            {
+              onSuccess: () => {
+                toast.success("Correo de bienvenida enviado exitosamente");
+              },
+              onError: (error) => {
+                console.error("Error enviando correo de bienvenida:", error);
+                toast.error("Error al enviar correo de bienvenida");
+              },
+            }
+          );
+        }
       }
       reset();
       onCloseModal?.();

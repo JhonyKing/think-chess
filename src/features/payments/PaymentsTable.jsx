@@ -31,7 +31,6 @@ import { useMutation } from "@tanstack/react-query";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { useSendMassReminders } from "../emails/useSendEmail";
-import EmailConfirmationModal from "../../ui/EmailConfirmationModal";
 
 const TableWrapper = styled.div`
   overflow-x: auto;
@@ -284,10 +283,7 @@ function PaymentsTable({ course, schoolId }) {
   const [showMesSelect, setShowMesSelect] = useState(false);
   const [mesSeleccionado, setMesSeleccionado] = useState("");
 
-  // Estados para modal de confirmación de emails masivos
-  const [showEmailMassConfirmModal, setShowEmailMassConfirmModal] =
-    useState(false);
-  const [alumnosAdeudoParaEmail, setAlumnosAdeudoParaEmail] = useState([]);
+  // Estados del modal eliminados - ahora usamos window.confirm directamente
 
   // Hook para envío masivo de recordatorios
   const { sendReminders, isSendingReminders } = useSendMassReminders();
@@ -1547,7 +1543,15 @@ function PaymentsTable({ course, schoolId }) {
   }
 
   function handleEnviarRecordatorios() {
+    console.log(
+      "🟢 BOTÓN VERDE PRESIONADO - handleEnviarRecordatorios iniciado"
+    );
+    console.log("📅 Mes seleccionado:", mesSeleccionado);
+    console.log("👥 Total estudiantes:", students.length);
+    console.log("💰 Total pagos:", payments.length);
+
     if (!mesSeleccionado) {
+      console.error("❌ No hay mes seleccionado");
       toast.error("Por favor selecciona un mes");
       return;
     }
@@ -1560,10 +1564,19 @@ function PaymentsTable({ course, schoolId }) {
           p.MesPagado === mesSeleccionado &&
           (p.Liquidado || p.Monto > 0) // Considerar pagados los que están liquidados o tienen monto > 0 (no son NA)
       );
-      return !pago; // Retornar true si NO tiene pago (tiene adeudo)
+      const tieneAdeudo = !pago;
+      console.log(
+        `👤 ${s.NumeroControl} (${s.Nombre}): ${
+          tieneAdeudo ? "ADEUDO" : "PAGADO"
+        }`
+      );
+      return tieneAdeudo; // Retornar true si NO tiene pago (tiene adeudo)
     });
 
+    console.log("🔍 Alumnos con adeudo encontrados:", alumnosAdeudo.length);
+
     if (alumnosAdeudo.length === 0) {
+      console.log("✅ No hay alumnos con adeudo");
       toast.success(`No hay alumnos con adeudo en ${mesSeleccionado}`);
       setShowMesSelect(false);
       return;
@@ -1571,8 +1584,14 @@ function PaymentsTable({ course, schoolId }) {
 
     // Filtrar solo alumnos que tengan correo electrónico
     const alumnosConCorreo = alumnosAdeudo.filter((alumno) => alumno.Correo);
+    console.log("📧 Alumnos con correo:", alumnosConCorreo.length);
+    console.log(
+      "📧 Lista de alumnos con correo:",
+      alumnosConCorreo.map((a) => `${a.NumeroControl}: ${a.Correo}`)
+    );
 
     if (alumnosConCorreo.length === 0) {
+      console.error("❌ Ningún alumno con adeudo tiene correo");
       toast.error(
         "Ningún alumno con adeudo tiene correo electrónico registrado"
       );
@@ -1580,6 +1599,11 @@ function PaymentsTable({ course, schoolId }) {
     }
 
     if (alumnosConCorreo.length < alumnosAdeudo.length) {
+      console.warn(
+        `⚠️ ${
+          alumnosAdeudo.length - alumnosConCorreo.length
+        } alumnos sin correo serán omitidos`
+      );
       toast.warn(
         `${
           alumnosAdeudo.length - alumnosConCorreo.length
@@ -1587,41 +1611,51 @@ function PaymentsTable({ course, schoolId }) {
       );
     }
 
-    // Mostrar modal de confirmación con selector de tipo
-    setAlumnosAdeudoParaEmail(alumnosConCorreo);
-    setShowEmailMassConfirmModal(true);
+    // Confirmar envío masivo con window.confirm (más simple y directo)
+    console.log("📬 Configurando confirmación masiva");
+    console.log("📬 Alumni para email:", alumnosConCorreo);
+
+    // Cerrar selector de mes
     setShowMesSelect(false);
-  }
 
-  function handleMassEmailConfirm(tipoPlantilla) {
-    console.log("🎯 handleMassEmailConfirm llamado con:", {
-      tipoPlantilla,
-      alumnosCount: alumnosAdeudoParaEmail.length,
-      mesPagado: mesSeleccionado,
-    });
+    // Preguntar qué tipo de correo enviar
+    const tipoRecordatorio = window.prompt(
+      `¿Qué tipo de correo deseas enviar a ${alumnosConCorreo.length} alumnos con adeudo en ${mesSeleccionado}?\n\nEscribe:\n1 = CORREO RECORDATORIO\n2 = CORREO RECORDATORIO VENCIDO\n3 = CORREO DISCULPAS\n\nOpción (1, 2 o 3):`
+    );
 
-    // Enviar recordatorios usando el hook con el tipo seleccionado
-    console.log("📬 Llamando sendReminders con parametros:", {
-      alumnosConAdeudo: alumnosAdeudoParaEmail,
-      mesPagado: mesSeleccionado,
-      tipoPlantilla: tipoPlantilla || "CORREO RECORDATORIO",
-    });
+    if (
+      !tipoRecordatorio ||
+      (tipoRecordatorio !== "1" &&
+        tipoRecordatorio !== "2" &&
+        tipoRecordatorio !== "3")
+    ) {
+      console.log("❌ Envío masivo cancelado por el usuario");
+      return;
+    }
 
+    let tipoPlantilla;
+    if (tipoRecordatorio === "1") {
+      tipoPlantilla = "CORREO RECORDATORIO";
+    } else if (tipoRecordatorio === "2") {
+      tipoPlantilla = "CORREO RECORDATORIO VENCIDO";
+    } else if (tipoRecordatorio === "3") {
+      tipoPlantilla = "CORREO DISCULPAS";
+    }
+
+    console.log("📧 Tipo de recordatorio masivo seleccionado:", tipoPlantilla);
+
+    // Enviar recordatorios directamente
+    console.log("📬 Enviando recordatorios masivos...");
     sendReminders({
-      alumnosConAdeudo: alumnosAdeudoParaEmail,
+      alumnosConAdeudo: alumnosConCorreo,
       mesPagado: mesSeleccionado,
-      tipoPlantilla: tipoPlantilla || "CORREO RECORDATORIO", // Pasar el tipo de plantilla seleccionado
+      tipoPlantilla, // Usar el tipo seleccionado
     });
 
-    console.log("✅ sendReminders llamado exitosamente");
-    setShowEmailMassConfirmModal(false);
-    setAlumnosAdeudoParaEmail([]);
+    console.log("✅ handleEnviarRecordatorios completado - Correos enviándose");
   }
 
-  function handleMassEmailCancel() {
-    setShowEmailMassConfirmModal(false);
-    setAlumnosAdeudoParaEmail([]);
-  }
+  // Funciones del modal eliminadas - ahora usamos window.confirm directamente
 
   return (
     <>
@@ -1990,25 +2024,7 @@ function PaymentsTable({ course, schoolId }) {
         ) : null}
       </Modal.Window>
 
-      {/* Modal de confirmación para envío masivo de correos */}
-      {showEmailMassConfirmModal && (
-        <Modal.Window name="mass-email-confirmation">
-          <EmailConfirmationModal
-            onCloseModal={handleMassEmailCancel}
-            onConfirm={handleMassEmailConfirm}
-            studentData={{
-              Nombre: `${alumnosAdeudoParaEmail.length} alumnos`,
-              Correo: `${alumnosAdeudoParaEmail.length} destinatarios`,
-              NumeroControl: "Envío masivo",
-            }}
-            paymentData={{
-              MesPagado: mesSeleccionado,
-            }}
-            emailType="mass-reminder"
-            isLoading={isSendingReminders}
-          />
-        </Modal.Window>
-      )}
+      {/* Modal de confirmación masiva eliminado - ahora usamos window.confirm */}
     </>
   );
 }

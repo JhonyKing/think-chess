@@ -148,19 +148,19 @@ export function generateEmailHTML({
           <table role="presentation" width="600" style="max-width:600px; background:#1A1A1A; border-radius:12px; overflow:hidden; color:#F7F5EF; font-family:Segoe UI, Arial, sans-serif;">
             <!-- Header con logo -->
             <tr>
-              <td align="center" style="padding:24px;">
-                <img src="${logoUrl}" width="120" height="120" alt="Piensa Ajedrez" style="display:block; border:0;">
+              <td align="center" style="padding:10px;">
+                 <img src="${logoUrl}" width="160" height="160" alt="Piensa Ajedrez" style="display:block; border:0; outline:none; text-decoration:none;-ms-interpolation-mode:bicubic; mso-line-height-rule:exactly; border-radius:50%;">
               </td>
             </tr>
             <!-- Borde dorado -->
             <tr><td style="height:6px; background:#D4AF37;"></td></tr>
             <!-- Contenido -->
             <tr>
-              <td style="padding:28px;">
+              <td style="padding:10px;">
                 <h1 style="color:#D4AF37 !important; margin:0 0 10px; font-size:28px; line-height:34px;">
                   ${titulo}
                 </h1>
-                <div style="margin:0 0 16px; font-size:16px; line-height:24px; color:#F7F5EF !important;">
+                <div style="margin:0 0 20px; font-size:16px; line-height:24px; color:#F7F5EF !important;">
                   ${contenidoSeguro}
                 </div>
                 ${

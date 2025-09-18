@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import styled from "styled-components";
 import Button from "../../ui/Button";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
+// format y es ya no se usan porque el campo es editable ahora
 import {
   useBancos,
   useCreatePayment,
@@ -13,7 +12,12 @@ import {
 } from "./usePayments";
 import { useSchools } from "../schools/useSchools";
 import { toast } from "react-hot-toast";
-import { getCurrentDateTime, getCurrentISOString } from "../../utils/dateUtils";
+import {
+  getCurrentISOString,
+  getCurrentDateTimeGMTMinus5,
+  convertToGMTMinus5,
+  convertFromLocalToISO,
+} from "../../utils/dateUtils";
 import { useSendEmailWithTemplate } from "../emails/useSendEmail";
 
 const ModalContent = styled.div`
@@ -137,24 +141,47 @@ function NewPaymentModal({
     (school) => school.NombreEscuela === student.NombreEscuela
   );
 
-  // Opciones para el selector de monto
+  // Calcular monto total abonado previamente en este mes (SOLO del mismo curso)
+  const totalAbonado = existingPayments
+    ? existingPayments
+        .filter((p) => p.Abono === true) // Solo abonos verdaderos
+        .reduce((sum, p) => sum + (p.Monto || 0), 0)
+    : 0;
+
+  console.log("💰 Total abonado previamente en este mes:", totalAbonado);
+
+  // Calcular montos restantes
+  const mensualidadNormal = studentSchool?.MensualidadPorAlumno || 0;
+  const mensualidadRecargo = studentSchool?.MensualidadConRecargo || 0;
+
+  const restanteMensualidad = Math.max(0, mensualidadNormal - totalAbonado);
+  const restanteRecargo = Math.max(0, mensualidadRecargo - totalAbonado);
+
+  // Opciones para el selector de monto (dinámicas según abonos previos)
   const amountOptions = [
     {
       value: "mensualidad",
-      label: `Mensualidad: $${studentSchool?.MensualidadPorAlumno || 0}`,
-      amount: studentSchool?.MensualidadPorAlumno || 0,
+      label:
+        totalAbonado > 0
+          ? `Mensualidad (restante): $${restanteMensualidad}`
+          : `Mensualidad: $${mensualidadNormal}`,
+      amount: totalAbonado > 0 ? restanteMensualidad : mensualidadNormal,
+      disabled: totalAbonado > 0 && restanteMensualidad <= 0, // Deshabilitar si ya está completamente pagado
     },
     {
       value: "mensualidad_recargo",
-      label: `Mensualidad con recargo: $${
-        studentSchool?.MensualidadConRecargo || 0
-      }`,
-      amount: studentSchool?.MensualidadConRecargo || 0,
+      label:
+        totalAbonado > 0
+          ? `Mensualidad con recargo (restante): $${restanteRecargo}`
+          : `Mensualidad con recargo: $${mensualidadRecargo}`,
+      amount: totalAbonado > 0 ? restanteRecargo : mensualidadRecargo,
+      disabled: totalAbonado > 0 && restanteRecargo <= 0, // Deshabilitar si ya está completamente pagado
     },
     {
       value: "abono",
       label: "Abono",
       amount: 0,
+      disabled: false, // Los abonos siempre están disponibles
     },
   ];
 
@@ -167,7 +194,7 @@ function NewPaymentModal({
         NumeroRecibo: pagoEdit.NumeroRecibo,
         NumeroControl: pagoEdit.NumeroControl,
         MesPagado: pagoEdit.MesPagado,
-        FechaHora: pagoEdit.FechaHora,
+        FechaHora: convertToGMTMinus5(pagoEdit.FechaHora), // Convertir a formato editable GMT-5
         MetodoPago: pagoEdit.MetodoPago,
         Monto: pagoEdit.Monto,
         Nota: pagoEdit.Nota,
@@ -190,13 +217,12 @@ function NewPaymentModal({
         }
       }
     } else {
-      // Para nuevo pago, generar número de recibo
-      const today = getCurrentDateTime();
-      const fechaHora = today.toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+      // Para nuevo pago, usar fecha/hora en GMT-5 para input datetime-local
+      const fechaHoraLocal = getCurrentDateTimeGMTMinus5();
 
       setForm((prevForm) => ({
         ...prevForm,
-        FechaHora: fechaHora,
+        FechaHora: fechaHoraLocal,
         NumeroRecibo: "", // Se genera después
       }));
     }
@@ -284,13 +310,14 @@ function NewPaymentModal({
     }
   }, [existingPayments, pagoEdit]);
 
-  // Calcular monto con beca en tiempo real
+  // Calcular monto con beca en tiempo real (SOLO para mensualidades, NO para inscripciones)
   useEffect(() => {
     if (
       form.Beca &&
       form.PorcentajeBeca > 0 &&
       form.Monto > 0 &&
-      !form.PagoNulo
+      !form.PagoNulo &&
+      mesPagado !== "Inscripcion" // CRÍTICO: Las becas NO aplican para inscripciones
     ) {
       const descuento = (form.Monto * form.PorcentajeBeca) / 100;
       setCantidadBeca(descuento);
@@ -303,7 +330,7 @@ function NewPaymentModal({
       setMontoConBeca(0);
       setCantidadBeca(0);
     }
-  }, [form.Monto, form.Beca, form.PorcentajeBeca, form.PagoNulo]);
+  }, [form.Monto, form.Beca, form.PorcentajeBeca, form.PagoNulo, mesPagado]);
 
   // Resetear selectedAmountType cuando se activa Pago nulo
   useEffect(() => {
@@ -315,17 +342,7 @@ function NewPaymentModal({
     }
   }, [form.PagoNulo]);
 
-  // Formatear fecha humana
-  let fechaHumana = "-";
-  if (form.FechaHora) {
-    try {
-      // Mostrar la hora local del usuario
-      const fechaLocal = new Date(form.FechaHora);
-      fechaHumana = format(fechaLocal, "dd/MM/yyyy HH:mm", { locale: es });
-    } catch (e) {
-      fechaHumana = form.FechaHora;
-    }
-  }
+  // Nota: fechaHumana ya no se usa porque el campo es editable ahora
 
   function handleChange(e) {
     const { name, value, type, checked } = e.target;
@@ -433,20 +450,23 @@ function NewPaymentModal({
     }
 
     // Limpiar objeto pago para enviar solo los campos válidos y tipos correctos
+    // CRÍTICO: Para inscripciones, NO cambiar los campos de beca en BD, solo no aplicar descuento
+    const isInscripcion = form.MesPagado === "Inscripcion";
     const pago = {
       NumeroRecibo: String(form.NumeroRecibo),
       NumeroControl: String(form.NumeroControl),
       Monto: form.PagoNulo ? 0 : Number(form.Monto) || 0, // Usar form.Monto directamente - lo que realmente pagó
       MesPagado: String(form.MesPagado),
-      FechaHora: String(form.FechaHora),
+      FechaHora: convertFromLocalToISO(form.FechaHora), // Convertir de GMT-5 local a ISO UTC
       MetodoPago: String(form.MetodoPago),
       Nota: String(notaFinal || ""),
       Notificado: !!form.Notificado,
       Liquidado: form.PagoNulo ? false : !!form.Liquidado,
       Abono: form.PagoNulo ? false : !!form.Abono,
       IDCurso: String(idCurso) || "",
+      // MANTENER los campos de beca originales - NO cambiarlos por ser inscripción
       Beca: !!form.Beca,
-      CantidadBeca: Number(cantidadBeca) || 0,
+      CantidadBeca: isInscripcion ? 0 : Number(cantidadBeca) || 0, // Solo para inscripciones, CantidadBeca = 0
       PorcentajeBeca: parseInt(form.PorcentajeBeca, 10) || 0,
     };
 
@@ -696,8 +716,24 @@ function NewPaymentModal({
           <Value>{form.MesPagado}</Value>
         </Field>
         <Field>
-          <Label>Fecha/Hora:</Label>
-          <Value>{fechaHumana}</Value>
+          <Label>Fecha/Hora (GMT-5):</Label>
+          <Input
+            type="datetime-local"
+            name="FechaHora"
+            value={form.FechaHora}
+            onChange={handleChange}
+            aria-label="Fecha y hora del pago"
+          />
+          <span
+            style={{
+              fontSize: "1.2rem",
+              color: "var(--color-grey-600)",
+              marginTop: "0.4rem",
+              display: "block",
+            }}
+          >
+            📍 Zona horaria: GMT-5 (Matamoros)
+          </span>
         </Field>
         <Field>
           <Checkbox
@@ -761,22 +797,55 @@ function NewPaymentModal({
         )}
         {/* Solo mostrar Tipo de Monto para mensualidades, no para inscripciones */}
         {mesPagado !== "Inscripcion" && (
-          <Field>
-            <Label>Tipo de Monto:</Label>
-            <Select
-              value={selectedAmountType}
-              onChange={handleAmountTypeChange}
-              disabled={form.PagoNulo}
-              aria-label="Seleccionar tipo de monto"
-            >
-              <option value="">Seleccione una opción</option>
-              {amountOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <>
+            {/* Mostrar información de abonos previos si existen */}
+            {totalAbonado > 0 && (
+              <Field>
+                <Label style={{ color: "var(--color-blue-700)" }}>
+                  💡 Abonos previos en {mesPagado}: ${totalAbonado.toFixed(2)}
+                </Label>
+                {/* Mostrar advertencia si ya se excedió la mensualidad normal */}
+                {totalAbonado >= mensualidadNormal && (
+                  <div
+                    style={{
+                      fontSize: "1.2rem",
+                      color: "var(--color-green-700)",
+                      marginTop: "0.4rem",
+                    }}
+                  >
+                    ✅ Mensualidad normal ya cubierta
+                    {totalAbonado >= mensualidadRecargo &&
+                      " - Mensualidad con recargo también cubierta"}
+                  </div>
+                )}
+              </Field>
+            )}
+            <Field>
+              <Label>Tipo de Monto:</Label>
+              <Select
+                value={selectedAmountType}
+                onChange={handleAmountTypeChange}
+                disabled={form.PagoNulo}
+                aria-label="Seleccionar tipo de monto"
+              >
+                <option value="">Seleccione una opción</option>
+                {amountOptions.map((option) => (
+                  <option
+                    key={option.value}
+                    value={option.value}
+                    disabled={option.disabled}
+                    style={{
+                      color: option.disabled ? "#999" : "inherit",
+                      fontStyle: option.disabled ? "italic" : "normal",
+                    }}
+                  >
+                    {option.label}
+                    {option.disabled ? " (Ya completado)" : ""}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </>
         )}
         <Field>
           <Label>Monto:</Label>
@@ -791,7 +860,8 @@ function NewPaymentModal({
             aria-label="Monto"
           />
         </Field>
-        {form.Beca && (
+        {/* OCULTAR campos de beca para inscripciones - las becas NO aplican para inscripciones */}
+        {form.Beca && mesPagado !== "Inscripcion" && (
           <>
             <Field>
               <Label>Porcentaje Beca:</Label>
@@ -806,6 +876,14 @@ function NewPaymentModal({
               <Value>${Number(cantidadBeca || 0).toFixed(2)}</Value>
             </Field>
           </>
+        )}
+        {/* Mostrar mensaje informativo para inscripciones cuando el alumno tiene beca */}
+        {form.Beca && mesPagado === "Inscripcion" && (
+          <Field>
+            <Label style={{ color: "var(--color-yellow-700)" }}>
+              📌 Nota: Las becas no aplican para pagos de inscripción
+            </Label>
+          </Field>
         )}
 
         <Field>

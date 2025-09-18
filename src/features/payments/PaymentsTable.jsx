@@ -235,6 +235,7 @@ function PaymentsTable({ course, schoolId }) {
     onSuccess: () => {
       toast.success(`Estudiante desactivado`);
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["activeStudentsCount"] }); // Actualizar contador
       queryClient.invalidateQueries({
         queryKey: ["studentsBySchool", schoolId],
       });
@@ -259,6 +260,7 @@ function PaymentsTable({ course, schoolId }) {
     onSuccess: () => {
       toast.success(`Estudiante reactivado`);
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["activeStudentsCount"] }); // Actualizar contador
       queryClient.invalidateQueries({
         queryKey: ["studentsBySchool", schoolId],
       });

@@ -222,6 +222,7 @@ function CreateStudentForm({
     onSuccess: (createdStudent) => {
       toast.success("Nuevo Alumno creado con éxito");
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["activeStudentsCount"] }); // Actualizar contador
       // Los estudiantes están relacionados con pagos
       queryClient.invalidateQueries({ queryKey: ["payments"] });
 
@@ -263,6 +264,7 @@ function CreateStudentForm({
     onSuccess: () => {
       toast.success("Alumno actualizado con éxito");
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["activeStudentsCount"] }); // Actualizar contador
       // Los estudiantes están relacionados con pagos
       queryClient.invalidateQueries({ queryKey: ["payments"] });
       reset();

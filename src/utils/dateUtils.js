@@ -109,6 +109,54 @@ export function formatDateForDisplay(date = null, includeTime = true) {
 }
 
 /**
+ * Obtiene la fecha y hora actual en la zona horaria GMT-5 (Matamoros)
+ * @returns {string} Fecha en formato YYYY-MM-DDTHH:MM para inputs datetime-local
+ */
+export function getCurrentDateTimeGMTMinus5() {
+  const now = new Date();
+  // Ajustar a GMT-5 (restar 5 horas)
+  const gmtMinus5 = new Date(now.getTime() - 5 * 60 * 60 * 1000);
+
+  // Formatear para input datetime-local (YYYY-MM-DDTHH:MM)
+  return gmtMinus5.toISOString().slice(0, 16);
+}
+
+/**
+ * Convierte una fecha/hora local a la zona horaria GMT-5
+ * @param {string|Date} dateTime - Fecha a convertir
+ * @returns {string} Fecha en formato YYYY-MM-DDTHH:MM
+ */
+export function convertToGMTMinus5(dateTime) {
+  if (!dateTime) return "";
+
+  const date = new Date(dateTime);
+  if (isNaN(date.getTime())) return "";
+
+  // Ajustar a GMT-5
+  const gmtMinus5 = new Date(date.getTime() - 5 * 60 * 60 * 1000);
+
+  // Formatear para input datetime-local
+  return gmtMinus5.toISOString().slice(0, 16);
+}
+
+/**
+ * Convierte una fecha de input datetime-local a ISO string considerando GMT-5
+ * @param {string} localDateTime - Fecha del input en formato YYYY-MM-DDTHH:MM
+ * @returns {string} Fecha en formato ISO para guardar en BD
+ */
+export function convertFromLocalToISO(localDateTime) {
+  if (!localDateTime) return "";
+
+  const localDate = new Date(localDateTime);
+  if (isNaN(localDate.getTime())) return "";
+
+  // La fecha del input se considera como GMT-5, así que agregamos 5 horas para UTC
+  const utcDate = new Date(localDate.getTime() + 5 * 60 * 60 * 1000);
+
+  return utcDate.toISOString();
+}
+
+/**
  * Debug: Imprime información completa de la fecha actual
  * USAR SOLO PARA DEBUGGING
  */
@@ -124,4 +172,3 @@ export function debugCurrentDate() {
   console.log("📅 ISO String:", getCurrentISOString());
   console.log("📅 Display:", formatDateForDisplay());
 }
-
